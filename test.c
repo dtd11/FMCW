@@ -7,7 +7,7 @@
  #include <stdlib.h>
  #include <math.h>
  #include <complex.h>
- #include <fftw3.h>  // FFTW 라이브러리 사용
+ #include "fftw3.h"
  #include <string.h>
  
  #define MAX(a,b) (((a)>(b))?(a):(b))
