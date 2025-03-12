@@ -1,14 +1,14 @@
-CC = gcc
-CFLAGS = -Wall -Wextra -O2 -std=c99
+CXX = g++
+CXXFLAGS = -Wall -Wextra -O2 -std=c++11
 LDFLAGS = -lfftw3 -lm
 
 TARGET = test
-SRCS = test.c
+SRCS = test.cpp
 
 all: $(TARGET)
 
 $(TARGET): $(SRCS)
-	$(CC) $(CFLAGS) -o $(TARGET) $(SRCS) $(LDFLAGS)
+	$(CXX) $(CXXFLAGS) -o $(TARGET) $(SRCS) $(LDFLAGS)
 
 clean:
 	rm -f $(TARGET)
