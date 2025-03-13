@@ -5,10 +5,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
-#include <math.h>
 #include <iostream>
 #include "okFrontPanelDLL.h"
-#include <gnuplot-iostream.h>
+#include "gnuplot-iostream.h"
 #include <fstream>
 #include <utility>
 #include <algorithm>
@@ -16,8 +15,8 @@
 #include <cmath>
 #include <complex.h>
 #include <cstdlib>
-#include <mat.h>
-#include <matrix.h>
+#include "mat.h"
+#include "matrix.h"
 
 #define _CRT_SECURE_NO_WARNINGS
 #define BLOCK_SIZE 16  // Adjust according to your block size
