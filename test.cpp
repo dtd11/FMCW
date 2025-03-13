@@ -5,10 +5,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
-#include <windows.h>
 #include <math.h>
 #include <iostream>
-#include <okFrontPanelDLL.h>
+#include "okFrontPanelDLL.h"
 #include <gnuplot-iostream.h>
 #include <fstream>
 #include <utility>
