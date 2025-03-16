@@ -1,14 +1,11 @@
 CXX = g++
-CXXFLAGS = -Wall -Wextra -O2 -std=c++11
-LDFLAGS = -lfftw3 -lm
+CXXFLAGS = -Wall -Wextra -O2 -std=c++17
+LIBS = -lfftw3 -lm -lboost_iostreams
 
-TARGET = test
-SRCS = test.cpp
+all: test
 
-all: $(TARGET)
-
-$(TARGET): $(SRCS)
-	$(CXX) $(CXXFLAGS) -o $(TARGET) $(SRCS) $(LDFLAGS)
+test: fmcw.cpp
+	$(CXX) $(CXXFLAGS) -o test fmcw.cpp $(INCLUDES) $(LIBS)
 
 clean:
-	rm -f $(TARGET)
+	rm -f test
