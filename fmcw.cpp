@@ -1,5 +1,5 @@
 #include <stdlib.h>
-#include <fftw3.h>
+#include "fftw3.h"
 #include <sstream>
 #include <math.h>
 #include <stdio.h>
@@ -15,8 +15,7 @@
 #include <cmath>
 #include <complex.h>
 #include <cstdlib>
-#include "mat.h"
-#include "matrix.h"
+#include <cfloat>
 
 #define _CRT_SECURE_NO_WARNINGS
 #define BLOCK_SIZE 16  // Adjust according to your block size
@@ -115,7 +114,7 @@ void free_complex_matrix(fftwf_complex** matrix, int rows);
 void complex_division(fftwf_complex a, fftwf_complex b, fftwf_complex result);
 
 int main()
-{   
+{
     // 컴퓨터에서 gnuplot.exe이 있는 경로로 저장(설치 방법 따르면 거의 비슷함)
     Gnuplot gp("\"C:\\Program Files\\gnuplot\\bin\\gnuplot.exe\"");
 
@@ -140,7 +139,7 @@ int main()
     int num_guard_doppler = 2;
     float threshold_scale = 2;
     int power_theshold = -75;
- 
+
     // variable (수정 거의 안하는 부분)
     uint8_t idle_pt = 0;
     uint8_t end_idle_pt = 0;
@@ -571,7 +570,7 @@ int main()
         for (int i = 0; i < Nd; i++) {
             range_rx1_same[i] = (double*)malloc(data_pt * sizeof(double));
         }
-        for (int i = 24; i < (chirpperframe-1); i++) {
+        for (int i = 24; i < (chirpperframe - 1); i++) {
             for (int j = 0; j < data_pt; j++) {
                 range_rx1_same[i - 24][j] = RAW_Rx1_data[i][j];
             }
@@ -690,7 +689,7 @@ int main()
 
         //cfar_start의 인덱스를 맞추는 코드
         for (int i = 0; i < num_detections_fin; i++) {
-            col_indices_fin[i] += cfar_start-1;
+            col_indices_fin[i] += cfar_start - 1;
         }
 
         // cfar로 찾은 타겟 중 max 값 찾기
@@ -1342,8 +1341,8 @@ int main()
 
         fftwf_complex** residual = allocate_complex_matrix(128, new_num_detections_fin);
 
-        for (i = 0; i < 128; i++) {
-            for (j = 0; j < new_num_detections_fin; j++) {
+        for (int i = 0; i < 128; i++) {
+            for (int j = 0; j < new_num_detections_fin; j++) {
                 residual[i][j][0] = x_data[i][j][0];
                 residual[i][j][1] = x_data[i][j][1];
             }
@@ -1354,8 +1353,8 @@ int main()
         double* estimated_angle_theta = (double*)malloc(MAX_TARGET_NUMBER * sizeof(double));
 
         fftwf_complex** weight = allocate_complex_matrix(RX_COUNT, TX_COUNT);
-        for (i = 0; i < RX_COUNT; i++) {
-            for (j = 0; j < TX_COUNT; j++) {
+        for (int i = 0; i < RX_COUNT; i++) {
+            for (int j = 0; j < TX_COUNT; j++) {
                 weight[i][j][0] = 1.0f;  // Real part
                 weight[i][j][1] = 0.0f;  // Imaginary part
             }
@@ -1522,16 +1521,14 @@ void transpose(int16_t* input, int16_t* output, int chirpperframe, int pt, int c
 }
 
 void save_output_to_csv(const char* filename, int16_t* output, int chirpperframe, int pt, int ch) {
-    FILE* file;
-    errno_t err = fopen_s(&file, filename, "w");
-    if (err != 0) {
+    FILE* file = fopen(filename, "w");
+    if (!file) {
         perror("Failed to open file");
         return;
     }
-
-    for (int i = 0; i < ch; ++i) {
-        for (int j = 0; j < chirpperframe; ++j) {
-            for (int k = 0; k < pt; ++k) {
+    for (int i = 0; i < ch; i++) {
+        for (int j = 0; j < chirpperframe; j++) {
+            for (int k = 0; k < pt; k++) {
                 int index = i * chirpperframe * pt + j * pt + k;
                 fprintf(file, "%d", output[index]);
                 if (k < pt - 1) {
@@ -1608,35 +1605,37 @@ void CA_CFAR(double* signal, int len, int N_TRAIN, int N_GUARD, double T, double
     }
 }
 
-int16_t* read_csv_to_array(const char* filename, int chripperframe, int pt, int ch) {
-    int16_t* array;
-    int i = 0;
-    int size = chripperframe * pt * ch;
-    FILE* file;
-    errno_t err;
-    array = (int16_t*)malloc(size * sizeof(int16_t));
-    if (array == NULL) {
-        printf("Error: Memory allocation failed\n");
+int16_t* read_csv_to_array(const char* filename, int chirpperframe, int pt, int ch) {
+    int size = chirpperframe * pt * ch;
+    int16_t* array = (int16_t*)malloc(size * sizeof(int16_t));
+    if (!array) {
+        fprintf(stderr, "malloc fail.\n");
         return NULL;
     }
 
-    err = fopen_s(&file, filename, "r");
-    if (err != 0) {
-        printf("Error: Could not open file %s\n", filename);
+    FILE* file = fopen(filename, "r");
+    if (!file) {
+        fprintf(stderr, "Error: Could not open file %s\n", filename);
         free(array);
         return NULL;
     }
 
-    while (fscanf_s(file, "%d,", &array[i]) != EOF) {
+    int i = 0;
+    while (true) {
+        // int16_t -> %hd
+        int ret = fscanf(file, "%hd,", &array[i]);
+        if (ret == EOF || ret <= 0) break;
         i++;
         if (i >= size) {
             size *= 2;
-            array = (int16_t*)realloc(array, size * sizeof(int16_t));
-            if (array == NULL) {
-                printf("Error: Memory reallocation failed\n");
+            int16_t* tmp = (int16_t*)realloc(array, size * sizeof(int16_t));
+            if (!tmp) {
+                fprintf(stderr, "realloc fail.\n");
                 fclose(file);
+                free(array);
                 return NULL;
             }
+            array = tmp;
         }
     }
     fclose(file);
@@ -1669,44 +1668,72 @@ void perform_fft_on_raw_data(double** RAW_Rx1_data, int data_pt, fftwf_complex**
     }
 }
 
-int load_complex_array(const char* file, const char* varname, ComplexDouble*** complex_array, size_t* m, size_t* n) {
-    MATFile* pmat;
-    mxArray* pa;
-    ComplexDouble* data;
-    size_t i, j;
-    pmat = matOpen(file, "r");
-    if (pmat == NULL) {
-        printf("Error opening file %s\n", file);
-        return(EXIT_FAILURE);
+int load_complex_array(const char* file, const char* varname,
+    ComplexDouble*** complex_array, size_t* m, size_t* n)
+{
+    (void)varname; // 사용 안 함
+
+    FILE* fp = fopen(file, "r");
+    if (!fp) {
+        std::cerr << "[Error] Can't open file: " << file << std::endl;
+        return EXIT_FAILURE;
     }
-    pa = matGetVariable(pmat, varname);
-    if (pa == NULL) {
-        printf("Error reading variable %s from file %s\n", varname, file);
-        matClose(pmat);
-        return(EXIT_FAILURE);
+
+    // 첫 줄에서 m, n 읽기( ASCII 로 [m n] )
+    size_t mm = 0, nn = 0;
+    if (fscanf(fp, "%zu %zu", &mm, &nn) != 2) {
+        std::cerr << "[Error] First line must have 'm n' format.\n";
+        fclose(fp);
+        return EXIT_FAILURE;
     }
-    *m = mxGetM(pa);
-    *n = mxGetN(pa);
-    if (!mxIsComplex(pa)) {
-        printf("Variable %s is not a complex array.\n", varname);
-        mxDestroyArray(pa);
-        matClose(pmat);
-        return(EXIT_FAILURE);
+    // 동적할당
+    ComplexDouble** arr = (ComplexDouble**)malloc(mm * sizeof(ComplexDouble*));
+    if (!arr) {
+        std::cerr << "[Error] malloc failed.\n";
+        fclose(fp);
+        return EXIT_FAILURE;
     }
-    data = (ComplexDouble*)mxGetData(pa);
-    *complex_array = (ComplexDouble**)malloc((*m) * sizeof(ComplexDouble*));
-    for (i = 0; i < *m; i++) {
-        (*complex_array)[i] = (ComplexDouble*)malloc((*n) * sizeof(ComplexDouble));
-    }
-    for (i = 0; i < *m; i++) {
-        for (j = 0; j < *n; j++) {
-            (*complex_array)[i][j].real = data[i + j * (*m)].real;
-            (*complex_array)[i][j].imag = data[i + j * (*m)].imag;
+    for (size_t i = 0; i < mm; i++) {
+        arr[i] = (ComplexDouble*)malloc(nn * sizeof(ComplexDouble));
+        if (!arr[i]) {
+            std::cerr << "[Error] malloc failed row " << i << "\n";
+            for (size_t k = 0; k < i; k++) {
+                free(arr[k]);
+            }
+            free(arr);
+            fclose(fp);
+            return EXIT_FAILURE;
         }
     }
-    mxDestroyArray(pa);
-    matClose(pmat);
-    return(EXIT_SUCCESS);
+
+    // 이후 mm행 each line: nn 쌍 (re, im)
+    for (size_t i = 0; i < mm; i++) {
+        for (size_t j = 0; j < nn; j++) {
+            double re = 0, im = 0;
+            int ret = fscanf(fp, "%lf %lf", &re, &im);
+            if (ret != 2) {
+                std::cerr << "[Error] line " << (i + 2) << " read fail.\n";
+                for (size_t r = 0; r < mm; r++) {
+                    free(arr[r]);
+                }
+                free(arr);
+                fclose(fp);
+                return EXIT_FAILURE;
+            }
+            arr[i][j].real = re;
+            arr[i][j].imag = im;
+        }
+    }
+
+    fclose(fp);
+    *complex_array = arr;
+    *m = mm;
+    *n = nn;
+
+    std::cout << "[Info] Loaded ASCII complex array: "
+        << mm << " x " << nn
+        << " from " << file << std::endl;
+    return EXIT_SUCCESS;
 }
 
 ComplexDouble complex_divide(ComplexDouble z1, ComplexDouble z2) {
