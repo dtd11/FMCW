@@ -1,12 +1,13 @@
 #include <stdlib.h>
 #include "fftw3.h"
 #include <sstream>
-#include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
+#include <windows.h>
+#include <math.h>
 #include <iostream>
-#include "okFrontPanelDLL.h"
+#include <okFrontPanelDLL.h>
 #include "gnuplot-iostream.h"
 #include <fstream>
 #include <utility>
@@ -15,22 +16,15 @@
 #include <cmath>
 #include <complex.h>
 #include <cstdlib>
-#include <cfloat>
+#include <mat.h>
+#include <matrix.h>
+#include <unordered_set>
+#include <thread>
+#include <chrono>
 
 #define _CRT_SECURE_NO_WARNINGS
-#define BLOCK_SIZE 16  // Adjust according to your block size
-#define MAX_LINE_LENGTH 1024
-#define ALPHA 0.593328
-#define ANGLE_FFT_LENGTH 1024
-#define MAX_TARGET_NUMBER 10
-#define EPSILON_VALUE 0.2
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-#define ROWS 40
-#define COLS 85
-#define TX_COUNT 8
-#define RX_COUNT 16
+#define BLOCK_SIZE 16
+#define PI 3.14159265358979323846
 
 okCFrontPanel dev;
 okCFrontPanel::ErrorCode error;
@@ -39,17 +33,6 @@ typedef struct {
     double real;
     double imag;
 } ComplexDouble;
-
-typedef struct {
-    int row;
-    int col;
-} Detection;
-
-double rad_to_deg(double rad) {
-    return rad * (180.0 / 3.14);
-}
-
-double calculate_average(double* data, int start, int end);
 
 void transpose(int16_t* input, int16_t* output, int chirpperframe, int pt, int ch);
 
@@ -64,10 +47,6 @@ void split_output_into_2d_arrays(int16_t* output, int chirpperframe, int pt,
     int16_t** RXDATA4, int16_t** RXDATA5, int16_t** RXDATA6,
     int16_t** RXDATA7, int16_t** RXDATA8);
 
-double calculate_mean(double* signal, int start, int end);
-
-void CA_CFAR(double* signal, int len, int N_TRAIN, int N_GUARD, double T, double* cfar_output, int* detected_indices, int* detected_count);
-
 int16_t* read_csv_to_array(const char* filename, int chripperframe, int pt, int ch);
 
 void subtract_arrays(int16_t* output, int16_t* nodata, int16_t* result, int total_size);
@@ -76,42 +55,52 @@ void perform_fft_on_raw_data(double** RAW_Rx1_data, int data_pt, fftwf_complex**
 
 int load_complex_array(const char* file, const char* varname, ComplexDouble*** complex_array, size_t* m, size_t* n);
 
-ComplexDouble complex_divide(ComplexDouble z1, ComplexDouble z2);
-
 void convert_to_fftwf_complex(ComplexDouble** calibration_array, size_t m, size_t n, fftwf_complex*** fftwf_calibration_array);
 
 fftwf_complex** allocate_fftwf_calibration_array(size_t m, size_t n);
 
-void normalize_target_fft(fftwf_complex*** target_fft, fftwf_complex** fftwf_calibration_array, int target_dim1, int target_dim2, int target_dim3, fftwf_complex*** target_fft_cal);
-
-void sum_YY_arrays(int angle_fft_legth, fftwf_complex* YY1, fftwf_complex* YY2, fftwf_complex* YY3,
-    fftwf_complex* YY4, fftwf_complex* YY5, fftwf_complex* YY6,
-    fftwf_complex* YY7, fftwf_complex* YY8, fftwf_complex* YY);
-
-void d2_fftshift(fftwf_complex* data, int N);
-
-void subtract_min_value(float** range_doppler_cfar, int num_rows, int num_cols);
-
-void cfar_2d(float** range_doppler_cfar, int num_rows, int num_cols, int num_train_cells_range,
-    int num_guard_cells_range, int num_train_cells_doppler, int num_guard_cells_doppler,
+void cfar_2d_prefixsum(float** range_doppler_cfar, int num_rows, int num_cols,
+    int num_train_cells_range, int num_guard_cells_range,
+    int num_train_cells_doppler, int num_guard_cells_doppler,
     float threshold_scale, int** cfar_result);
 
 int find_peaks(int** cfar_result, int num_rows, int num_cols, int* row_indices, int* col_indices);
 
 void fftshift_rows(float** array, int num_rows, int num_cols);
 
-void remove_adjacent_targets(int* row_indices, int* col_indices, int* num_detections,
-    float** range_doppler_cfar, int* row_indices_fin, int* col_indices_fin, int* num_detections_fin);
-
-double** allocate_matrix(int rows, int cols);
-
-fftwf_complex** allocate_complex_matrix(int rows, int cols);
-
-void free_matrix(double** matrix, int rows);
-
-void free_complex_matrix(fftwf_complex** matrix, int rows);
-
 void complex_division(fftwf_complex a, fftwf_complex b, fftwf_complex result);
+
+void get_unique_col_indices_only_one(const int* col_indices_fin, int num_detections_fin, int* unique_col_indices, int* unique_count);
+
+void subtract_one_from_array(int* array, int size);
+
+double** allocate_ones_matrix(int rows, int cols);
+
+void complex_set(fftwf_complex out, float re, float im);
+
+void complex_add(fftwf_complex out, fftwf_complex a, fftwf_complex b);
+
+void complex_mul(fftwf_complex out, fftwf_complex a, fftwf_complex b);
+
+void complex_conj(fftwf_complex out, fftwf_complex a);
+
+void complex_div(fftwf_complex out, fftwf_complex a, fftwf_complex b);
+
+float complex_abs(fftwf_complex a);
+
+void compute_AhA(fftwf_complex A[128][2], fftwf_complex AhA[2][2]);
+
+void compute_Ahx(fftwf_complex A[128][2], fftwf_complex x[128], fftwf_complex Ahx[128]);
+
+int invert_2x2(fftwf_complex m[2][2], fftwf_complex inv[2][2]);
+
+int least_squares_custom(fftwf_complex** A_steeringmatrix, fftwf_complex** x_data, int m, fftwf_complex* s_value);
+
+int least_squares_two_column(fftwf_complex** A_steeringmatrix, fftwf_complex** x_data, int m, fftwf_complex* s_value);
+
+void complex_sub(fftwf_complex res, fftwf_complex a, fftwf_complex b);
+
+void compute_residual(fftwf_complex** residual, fftwf_complex** x_data, fftwf_complex** A_steeringmatrix, fftwf_complex* s_value, int m);
 
 int main()
 {
@@ -119,26 +108,25 @@ int main()
     Gnuplot gp("\"C:\\Program Files\\gnuplot\\bin\\gnuplot.exe\"");
 
     // CSV 파일 저장 경로 filepath는 저장되는 파일 / nodata_filepath는 nodata파일
-    const char* filepath = "D:\\backup\\measurement\\test\\3m_rignt_20_1.csv";
-    const char* nodata_filepath = "D:\\backup\\measurement\\test\\3m_rignt_20_1.csv";
+    const char* filepath = "C:\\Users\\user\\Desktop\\data\\250428_ADC\\agilentfunc_single_0dB.csv";
+    const char* nodata_filepath = "C:\\Users\\user\\Desktop\\data\\250428_ADC\\test_nofilter.csv";
 
     // variable 정의
     // chirp setting 포인트 수(chirp이 바뀔 때마다 세팅)
-    uint16_t pt = 4000;
-    uint16_t chirpperframe = (25 + 1);
-    float cpt = (800e-6 - (1e-6));
+    uint16_t pt = 2000;
+    uint16_t chirpperframe = (40 + 1);
+    float cpt = (400e-6 - (1e-6));
 
     // CFAR 알고리즘 관련 변수
 
-    int cfar_start = 30;
-    int cfar_end = 60;
+    int cfar_start = 0;
+    int cfar_end = 100;
     int new_num_cols = cfar_end - cfar_start + 1;
     int num_train_range = 4;
-    int num_guard_range = 2;
+    int num_guard_range = 0;
     int num_train_doppler = 4;
     int num_guard_doppler = 2;
-    float threshold_scale = 2;
-    int power_theshold = -75;
+    float threshold_scale = 15;
 
     // variable (수정 거의 안하는 부분)
     uint8_t idle_pt = 0;
@@ -154,9 +142,9 @@ int main()
     uint8_t idle_point = 20;
     uint16_t data_pt = pt - idle_point;
     uint8_t ch = 8;
-    uint32_t total_pt = (pt * chirpperframe * ch); // 총 샘플의 수  
+    uint32_t total_pt = (pt * chirpperframe * ch); // 총 샘플의 수
     uint32_t array_size = 2 * total_pt; // 모든 샘플을 받을 바이트의 수 (16 bit이므로 총 샘플 수에서 X 2)
-    float range_resolution = c / (2 * f_bw); // 거리 해상도
+    float range_resolution = c / (2 * f_bw);
     float max_range = (range_resolution * data_pt / 2);
     int total_size = chirpperframe * pt * ch;
     double scaling_factor = max_range / ((data_pt / 2.0) - 1.0);
@@ -165,33 +153,13 @@ int main()
     double max_doppler = doppler_resolution * Nd / 2;
     double max_velocity = (lambda * max_doppler) / 2;
 
-    int Tx_x_position[8] = { 3, 5, 4, 1, 24, 22, 23, 14 };
-    int Tx_y_position[8] = { 1, 19, 28, 41, 2, 13, 23, 40 };
-    int Rx_x_position[16] = { 12, 12, 12, 12, 1, 1, 1, 1, 8, 8, 8, 8, 15, 15, 15, 15 };
-    int Rx_y_position[16] = { 1, 2, 3, 4, 3, 4, 5, 6, 31, 32, 33, 34, 36, 37, 38, 39 };
-
-    int TRx_x_position[128], TRx_y_position[128];
-    for (int i = 0; i < 128; i++) {
-        TRx_x_position[i] = Tx_x_position[i % 8] + Rx_x_position[i % 16];
-        TRx_y_position[i] = Tx_y_position[i % 8] + Rx_y_position[i % 16];
-    }
-
-    double** weight = allocate_matrix(16, 8);
-
-    for (int row = 0; row < 16; row++) {
-        for (int col = 0; col < 8; col++) {
-            weight[row][col] = 1.0;
-        }
-    }
-
-    double epsilon_value = 0.2;
-
     // notarget data 관련 변수(건드리지 말기)
-    int16_t* nodata = (int16_t*)malloc(chirpperframe * pt * ch * sizeof(int16_t));
-    nodata = read_csv_to_array(nodata_filepath, chirpperframe, pt, ch);
+    //int16_t* nodata = (int16_t*)malloc(chirpperframe * pt * ch * sizeof(int16_t));
+    //nodata = read_csv_to_array(nodata_filepath, chirpperframe, pt, ch);
 
     // angle fft 관련 변수
-    const char* cali_file = "C:\\Users\\samsung\\Downloads\\ADC_test\\target_fft_save.mat";
+    //calibration 데이터 (target_fft_save)의 경로를 적기 (중요!)
+    const char* cali_file = "C:\\Users\\user\\Desktop\\operation_code\\matlab\\target_fft_save.mat";
     const char* varname = "target_fft_save";
     ComplexDouble** calibration_array;
     size_t m, n;
@@ -204,76 +172,116 @@ int main()
     }
     free(calibration_array);
 
-
+    //각도 관련 변수
+    int Tx_x_position[] = { 64, 59, 35, 23, 19, 5, 5, 1 };
+    int Tx_y_position[] = { 5, 3, 9, 11, 2, 11, 5, 1 };
+    int TRx_x_position[] = { 131,130,129,128,113,112,111,110,98,97,96,95,68,67,66,65,126,125,124,123,108,107,106,105,93,92,91,90,63,62,61,60,102,101,100,99,84,83,82,81,69,68,67,66,39,38,37,36,90,89,88,87,72,71,70,69,57,56,55,54,27,26,25,24,86,85,84,83,68,67,66,65,53,52,51,50,23,22,21,20,72,71,70,69,54,53,52,51,39,38,37,36,9,8,7,6,72,71,70,69,54,53,52,51,39,38,37,36,9,8,7,6,68,67,66,65,50,49,48,47,35,34,33,32,5,4,3,2 };
+    int TRx_y_position[] = { 6,6,6,6,13,13,13,13,10,10,10,10,17,17,17,17,4,4,4,4,11,11,11,11,8,8,8,8,15,15,15,15,10,10,10,10,17,17,17,17,14,14,14,14,21,21,21,21,12,12,12,12,19,19,19,19,16,16,16,16,23,23,23,23,3,3,3,3,10,10,10,10,7,7,7,7,14,14,14,14,12,12,12,12,19,19,19,19,16,16,16,16,23,23,23,23,6,6,6,6,13,13,13,13,10,10,10,10,17,17,17,17,2,2,2,2,9,9,9,9,6,6,6,6,13,13,13,13 };
+    int size_tx = sizeof(Tx_x_position) / sizeof(int);
+    int size_ty = sizeof(Tx_y_position) / sizeof(int);
+    subtract_one_from_array(Tx_x_position, size_tx);
+    subtract_one_from_array(Tx_y_position, size_ty);
+    int max_targetnumber = 2;
+    float epsilon_value = 0.7;
+    float alpha1 = 0.593328f;
+    float alpha2 = 1.8f;
+    double** weight = allocate_ones_matrix(16, 8);
+    int angle_total_pt = 128;
 
     //// Radar 의 시작 코드
 
-//if (dev.OpenBySerial() != okCFrontPanel::NoError) {
-//    std::cerr << "Failed to open device." << std::endl;
-//    return -1;
-//}
-// bitstream 파일 넣기(프로젝트 폴더에 bitstream 파일이 있어야 함!)
-//error = dev.ConfigureFPGA("240621_PLL_debugging.bit"); 
-//error = dev.ConfigureFPGA("240911_Velocity_test.bit");
-//error = dev.ConfigureFPGA("240704_8t16r_fix.bit");
-//if (error != okCFrontPanel::NoError) {
-//    std::cerr << "Failed to configure FPGA. Error code: " << error << std::endl;
-//    return -1;
-//}
+    if (dev.OpenBySerial() != okCFrontPanel::NoError) {
+        std::cerr << "Failed to open device." << std::endl;
+        return -1;
+    }
 
-// Chirp setting
+    //bitstream 파일 넣기(프로젝트 폴더에 bitstream 파일이 있어야 함!)
 
-//(93~95G,2GHz, 41.675MHz) 400us_200us step : 1000
-//spi_write(4, 0x00034E27);  //# T7   triangular : 0x000300A7
-//spi_write(4, 0x00001F46); // # T6
-//spi_write(4, 0x00281B55); // # T5
-//spi_write(4, 0x00780284); // # T4
-//spi_write(4, 0x014300C3); // # T3 triangular : 0x00C20443, sawtooth : 0x00C20043
-//spi_write(4, 0x07208022); // # T2 -
-//spi_write(4, 0x00000001); // # T1
-//spi_write(4, 0xF8136000); // # T0 -
+    error = dev.ConfigureFPGA("250331_94G_matching_ver2.bit");
+    if (error != okCFrontPanel::NoError) {
+        std::cerr << "Failed to configure FPGA. Error code: " << error << std::endl;
+        return -1;
+    }
 
-//(93~95G,2GHz, 41.675MHz) 800us_400us step : 1000
-//spi_write(4, 0x00034E27); 
-//spi_write(4, 0x00001F46); 
-//spi_write(4, 0x00281B55); 
-//spi_write(4, 0x00780284); 
-//spi_write(4, 0x014300C3); 
-//spi_write(4, 0x07208042); 
-//spi_write(4, 0x00000001); 
-//spi_write(4, 0xF8136000);
-// 반복 코드 시작
+    // Chirp setting
 
+    // (93~95G,2GHz, 41.675MHz) 200us_100us
+    //spi_write(4, 0x00034E27);
+    //spi_write(4, 0x00001F46);
+    //spi_write(4, 0x00281B55);
+    //spi_write(4, 0x00780284);
+    //spi_write(4, 0x014300C3);
+    //spi_write(4, 0x07208012);
+    //spi_write(4, 0x00000001);
+    //spi_write(4, 0xF8136000);
+
+    //(93~95G,2GHz, 41.675MHz) 400us_200us
+    spi_write(4, 0x00034E27);
+    spi_write(4, 0x00001F46);
+    spi_write(4, 0x00281B55);
+    spi_write(4, 0x00780284);
+    spi_write(4, 0x014300C3);
+    spi_write(4, 0x07208022);
+    spi_write(4, 0x00000001);
+    spi_write(4, 0xF8136000);
+
+    //(93~95G,2GHz, 41.675MHz) 800us_400us
+    //spi_write(4, 0x00034E27); 
+    //spi_write(4, 0x00001F46); 
+    //spi_write(4, 0x00281B55); 
+    //spi_write(4, 0x00780284); 
+    //spi_write(4, 0x014300C3); 
+    //spi_write(4, 0x07208042); 
+    //spi_write(4, 0x00000001); 
+    //spi_write(4, 0xF8136000);
+
+    // 반복 코드 시작
     while (1)
     {
-        //debugging 용 스위칭
-        // 8TX 16RX RX 스위칭 12:1, 2   2 : 1, 3    10 1, 4
-        //dev.SetWireInValue(0x07, 0xffff);
-        //dev.UpdateWireIns();
-        //dev.SetWireInValue(0x00, 0x00000001);  // FIFO reset 1
-        //dev.UpdateWireIns();
-        //Sleep(0.001); // delay
-        //dev.SetWireInValue(0x06, 0x00000000);  // io_trigger 0
-        //dev.UpdateWireIns();
-        //Sleep(0.001); // delay
-        //dev.SetWireInValue(0x00, 0x00000002 + 0x00000008 * idle_chirp + 0x400000 * (chirpperframe));  // # FIFO reset 0
-        ////#                        pa on        idle chirp(2)   chirp per frame
-        //dev.UpdateWireIns();
-        //dev.SetWireInValue(0x01, 0x00000001 * idle_pt + 0x00010000 * pt);
-        ////#                         idle  pt           pt per chirp
-        //dev.UpdateWireIns();
-        //dev.SetWireInValue(0x06, 0x00000001); // io_trigger 1
-        //dev.UpdateWireIns();
-        //unsigned char* buffer = (unsigned char*)malloc(array_size * sizeof(unsigned char));
-        //dev.ReadFromBlockPipeOut(0xA3, BLOCK_SIZE, array_size, buffer);  // # pipeout(fpga > PC)
-        //int16_t* int16_buffer = (int16_t*)buffer; //int 16 자료형으로 변환
-        //int16_t* output = (int16_t*)malloc(total_pt * sizeof(int16_t)); //공간 할당
-        //transpose(int16_buffer, output, chirpperframe, pt, ch); //output으로 transpose(배열 순서 변경)
-        //free(buffer);
+        dev.SetWireInValue(0x00, 0x00000001);  // FIFO reset 1
+        dev.UpdateWireIns();
+        Sleep(0.001); // delay
+        dev.SetWireInValue(0x06, 0x00000000);  // io_trigger 0
+        dev.UpdateWireIns();
+        Sleep(0.001); // delay
+        dev.SetWireInValue(0x00, 0x00000002 + 0x00000008 * idle_chirp + 0x400000 * (chirpperframe));  // # FIFO reset 0
+        //#                        pa on        idle chirp(2)   chirp per frame
+        dev.UpdateWireIns();
+        dev.SetWireInValue(0x01, 0x00000001 * idle_pt + 0x00010000 * pt);
+        //#                         idle  pt           pt per chirp
+        dev.UpdateWireIns();
+        //ADC GAIN
+        spi_write(0, 0x000001);
+
+        spi_write(0, 0x000004);
+        spi_write(0, 0x99000F);
+        spi_write(0, 0x9A0005);
+
+        //ADC spi
+        // filter bandwidth
+        spi_write(0, 0x070008); //filter_BW:8/internal_dc_coupling:A
+        //ADC digital hpf
+        //spi_write(0, 0x150005); //ch2_gain_0dB
+        spi_write(0, 0x21000B); //digital hpf ch1 to 4(k = 5,B)
+        spi_write(0, 0x33000B); //digital hpf ch5 to 8(k = 5,B)
+        //spi_write(0, 0x210007); //digital hpf ch1 to 4(k = 3,B)
+        //spi_write(0, 0x210007); //digital hpf ch1 to 4(k = 3,B)
+        //spi_write(0, 0x210015); 
+        //spi_write(0, 0x330015); 
+
+        // io_trigger 1
+        dev.SetWireInValue(0x06, 0x00000001); // io_trigger 1
+        dev.UpdateWireIns();
+        unsigned char* buffer = (unsigned char*)malloc(array_size * sizeof(unsigned char));
+        dev.ReadFromBlockPipeOut(0xA3, BLOCK_SIZE, array_size, buffer);  // # pipeout(fpga > PC)
+        int16_t* int16_buffer = (int16_t*)buffer; //int 16 자료형으로 변환
+        int16_t* output = (int16_t*)malloc(total_pt * sizeof(int16_t)); //공간 할당
+        transpose(int16_buffer, output, chirpperframe, pt, ch); //output으로 transpose(배열 순서 변경)
 
         // CSV 파일 저장 코드
-        //save_output_to_csv(filepath, output, chirpperframe, pt, ch);
-        //free(buffer);
+        save_output_to_csv(filepath, output, chirpperframe, pt, ch);
+        free(buffer);
+
         //nodata 빼는 코드
         //int16_t* result = (int16_t*)malloc(chirpperframe * pt * ch * sizeof(int16_t));
         //subtract_arrays(output, nodata, result, total_size);
@@ -299,8 +307,8 @@ int main()
         }
 
         //// NODATA 안 빼는 상황
-        //split_output_into_2d_arrays(output, chirpperframe, pt, RXDATA3, RXDATA4, RXDATA1, RXDATA2, RXDATA6, RXDATA5, RXDATA8, RXDATA7);
-        //free(output);
+        split_output_into_2d_arrays(output, chirpperframe, pt, RXDATA7, RXDATA8, RXDATA5, RXDATA6, RXDATA3, RXDATA4, RXDATA1, RXDATA2);
+        free(output);
 
         //// NODATA 빼는 상황
         //free(output);
@@ -308,8 +316,12 @@ int main()
         //free(result);
 
         //nodata만 쓰기(디버깅용)
-        split_output_into_2d_arrays(nodata, chirpperframe, pt, RXDATA1, RXDATA2, RXDATA3, RXDATA4, RXDATA5, RXDATA6, RXDATA7, RXDATA8);
-        free(nodata);
+
+         //notarget data 관련 변수(건드리지 말기)
+        //int16_t* nodata = (int16_t*)malloc(chirpperframe * pt * ch * sizeof(int16_t));
+        //nodata = read_csv_to_array(nodata_filepath, chirpperframe, pt, ch);
+        //split_output_into_2d_arrays(nodata, chirpperframe, pt, RXDATA7, RXDATA8, RXDATA5, RXDATA4, RXDATA3, RXDATA6, RXDATA1, RXDATA2);
+        //free(nodata);
 
         //// rawdata 플롯(디버깅)
 
@@ -401,41 +413,17 @@ int main()
         //gp.flush(); // 명령어 강제 전송
 
         ////////// Raw Data
-
-        int16_t** RXDATA1_idle = (int16_t**)malloc(chirpperframe * sizeof(int16_t*));
-        int16_t** RXDATA2_idle = (int16_t**)malloc(chirpperframe * sizeof(int16_t*));
-        int16_t** RXDATA3_idle = (int16_t**)malloc(chirpperframe * sizeof(int16_t*));
-        int16_t** RXDATA4_idle = (int16_t**)malloc(chirpperframe * sizeof(int16_t*));
-        int16_t** RXDATA5_idle = (int16_t**)malloc(chirpperframe * sizeof(int16_t*));
-        int16_t** RXDATA6_idle = (int16_t**)malloc(chirpperframe * sizeof(int16_t*));
-        int16_t** RXDATA7_idle = (int16_t**)malloc(chirpperframe * sizeof(int16_t*));
-        int16_t** RXDATA8_idle = (int16_t**)malloc(chirpperframe * sizeof(int16_t*));
-
-        for (int i = 0; i < chirpperframe; ++i) {
-            RXDATA1_idle[i] = (int16_t*)malloc(data_pt * sizeof(int16_t));
-            RXDATA2_idle[i] = (int16_t*)malloc(data_pt * sizeof(int16_t));
-            RXDATA3_idle[i] = (int16_t*)malloc(data_pt * sizeof(int16_t));
-            RXDATA4_idle[i] = (int16_t*)malloc(data_pt * sizeof(int16_t));
-            RXDATA5_idle[i] = (int16_t*)malloc(data_pt * sizeof(int16_t));
-            RXDATA6_idle[i] = (int16_t*)malloc(data_pt * sizeof(int16_t));
-            RXDATA7_idle[i] = (int16_t*)malloc(data_pt * sizeof(int16_t));
-            RXDATA8_idle[i] = (int16_t*)malloc(data_pt * sizeof(int16_t));
-        }
-
-        // idle point만큼 빼기
-        for (int i = 0; i < chirpperframe; ++i) {
-            for (int j = 20; j < pt; ++j) {
-                RXDATA1_idle[i][j - idle_point] = RXDATA1[i][j];
-                RXDATA2_idle[i][j - idle_point] = RXDATA2[i][j];
-                RXDATA3_idle[i][j - idle_point] = RXDATA3[i][j];
-                RXDATA4_idle[i][j - idle_point] = RXDATA4[i][j];
-                RXDATA5_idle[i][j - idle_point] = RXDATA5[i][j];
-                RXDATA6_idle[i][j - idle_point] = RXDATA6[i][j];
-                RXDATA7_idle[i][j - idle_point] = RXDATA7[i][j];
-                RXDATA8_idle[i][j - idle_point] = RXDATA8[i][j];
+        int16_t** RXDATA[8] = { RXDATA1, RXDATA2, RXDATA3, RXDATA4, RXDATA5, RXDATA6, RXDATA7, RXDATA8 };
+        double*** RAW_Rx = (double***)malloc(8 * sizeof(double**));
+        for (int ch = 0; ch < 8; ch++) {
+            RAW_Rx[ch] = (double**)malloc((chirpperframe - 1) * sizeof(double*));
+            for (int i = 1; i < chirpperframe; i++) {
+                RAW_Rx[ch][i - 1] = (double*)malloc((pt - idle_point) * sizeof(double));
+                for (int j = idle_point; j < pt; j++) {
+                    RAW_Rx[ch][i - 1][j - idle_point] = ((double)RXDATA[ch][i][j]) / 2048.0;
+                }
             }
         }
-
         for (int i = 0; i < chirpperframe; ++i) {
             free(RXDATA1[i]);
             free(RXDATA2[i]);
@@ -446,7 +434,6 @@ int main()
             free(RXDATA7[i]);
             free(RXDATA8[i]);
         }
-
         free(RXDATA1);
         free(RXDATA2);
         free(RXDATA3);
@@ -456,123 +443,18 @@ int main()
         free(RXDATA7);
         free(RXDATA8);
 
-        double** RXDATA1_vol = (double**)malloc(chirpperframe * sizeof(double*));
-        double** RXDATA2_vol = (double**)malloc(chirpperframe * sizeof(double*));
-        double** RXDATA3_vol = (double**)malloc(chirpperframe * sizeof(double*));
-        double** RXDATA4_vol = (double**)malloc(chirpperframe * sizeof(double*));
-        double** RXDATA5_vol = (double**)malloc(chirpperframe * sizeof(double*));
-        double** RXDATA6_vol = (double**)malloc(chirpperframe * sizeof(double*));
-        double** RXDATA7_vol = (double**)malloc(chirpperframe * sizeof(double*));
-        double** RXDATA8_vol = (double**)malloc(chirpperframe * sizeof(double*));
-
-        for (int i = 0; i < chirpperframe; ++i) {
-            RXDATA1_vol[i] = (double*)malloc(data_pt * sizeof(double));
-            RXDATA2_vol[i] = (double*)malloc(data_pt * sizeof(double));
-            RXDATA3_vol[i] = (double*)malloc(data_pt * sizeof(double));
-            RXDATA4_vol[i] = (double*)malloc(data_pt * sizeof(double));
-            RXDATA5_vol[i] = (double*)malloc(data_pt * sizeof(double));
-            RXDATA6_vol[i] = (double*)malloc(data_pt * sizeof(double));
-            RXDATA7_vol[i] = (double*)malloc(data_pt * sizeof(double));
-            RXDATA8_vol[i] = (double*)malloc(data_pt * sizeof(double));
-        }
-
-        // voltage로 변환
-        for (int i = 0; i < chirpperframe; ++i) {
-            for (int j = 0; j < data_pt; ++j) {
-                RXDATA1_vol[i][j] = static_cast<double>(RXDATA1_idle[i][j]) / 2048.0;
-                RXDATA2_vol[i][j] = static_cast<double>(RXDATA2_idle[i][j]) / 2048.0;
-                RXDATA3_vol[i][j] = static_cast<double>(RXDATA3_idle[i][j]) / 2048.0;
-                RXDATA4_vol[i][j] = static_cast<double>(RXDATA4_idle[i][j]) / 2048.0;
-                RXDATA5_vol[i][j] = static_cast<double>(RXDATA5_idle[i][j]) / 2048.0;
-                RXDATA6_vol[i][j] = static_cast<double>(RXDATA6_idle[i][j]) / 2048.0;
-                RXDATA7_vol[i][j] = static_cast<double>(RXDATA7_idle[i][j]) / 2048.0;
-                RXDATA8_vol[i][j] = static_cast<double>(RXDATA8_idle[i][j]) / 2048.0;
-            }
-        }
-
-        for (int i = 0; i < chirpperframe; ++i) {
-            free(RXDATA1_idle[i]);
-            free(RXDATA2_idle[i]);
-            free(RXDATA3_idle[i]);
-            free(RXDATA4_idle[i]);
-            free(RXDATA5_idle[i]);
-            free(RXDATA6_idle[i]);
-            free(RXDATA7_idle[i]);
-            free(RXDATA8_idle[i]);
-        }
-
-        free(RXDATA1_idle);
-        free(RXDATA2_idle);
-        free(RXDATA3_idle);
-        free(RXDATA4_idle);
-        free(RXDATA5_idle);
-        free(RXDATA6_idle);
-        free(RXDATA7_idle);
-        free(RXDATA8_idle);
-
-        double** RAW_Rx1_data = (double**)malloc((chirpperframe - 1) * sizeof(double*));
-        double** RAW_Rx2_data = (double**)malloc((chirpperframe - 1) * sizeof(double*));
-        double** RAW_Rx3_data = (double**)malloc((chirpperframe - 1) * sizeof(double*));
-        double** RAW_Rx4_data = (double**)malloc((chirpperframe - 1) * sizeof(double*));
-        double** RAW_Rx5_data = (double**)malloc((chirpperframe - 1) * sizeof(double*));
-        double** RAW_Rx6_data = (double**)malloc((chirpperframe - 1) * sizeof(double*));
-        double** RAW_Rx7_data = (double**)malloc((chirpperframe - 1) * sizeof(double*));
-        double** RAW_Rx8_data = (double**)malloc((chirpperframe - 1) * sizeof(double*));
-
-        for (int i = 0; i < (chirpperframe - 1); ++i) {
-            RAW_Rx1_data[i] = (double*)malloc(data_pt * sizeof(double));
-            RAW_Rx2_data[i] = (double*)malloc(data_pt * sizeof(double));
-            RAW_Rx3_data[i] = (double*)malloc(data_pt * sizeof(double));
-            RAW_Rx4_data[i] = (double*)malloc(data_pt * sizeof(double));
-            RAW_Rx5_data[i] = (double*)malloc(data_pt * sizeof(double));
-            RAW_Rx6_data[i] = (double*)malloc(data_pt * sizeof(double));
-            RAW_Rx7_data[i] = (double*)malloc(data_pt * sizeof(double));
-            RAW_Rx8_data[i] = (double*)malloc(data_pt * sizeof(double));
-        }
-
-        // 1chirp 빼기 (최종 raw데이터)
-        for (int i = 1; i < (chirpperframe); ++i) {
-            for (int j = 0; j < data_pt; ++j) {
-                RAW_Rx1_data[i - 1][j] = RXDATA1_vol[i][j];
-                RAW_Rx2_data[i - 1][j] = RXDATA2_vol[i][j];
-                RAW_Rx3_data[i - 1][j] = RXDATA3_vol[i][j];
-                RAW_Rx4_data[i - 1][j] = RXDATA4_vol[i][j];
-                RAW_Rx5_data[i - 1][j] = RXDATA5_vol[i][j];
-                RAW_Rx6_data[i - 1][j] = RXDATA6_vol[i][j];
-                RAW_Rx7_data[i - 1][j] = RXDATA7_vol[i][j];
-                RAW_Rx8_data[i - 1][j] = RXDATA8_vol[i][j];
-            }
-        }
-
-        for (int i = 0; i < chirpperframe; ++i) {
-            free(RXDATA1_vol[i]);
-            free(RXDATA2_vol[i]);
-            free(RXDATA3_vol[i]);
-            free(RXDATA4_vol[i]);
-            free(RXDATA5_vol[i]);
-            free(RXDATA6_vol[i]);
-            free(RXDATA7_vol[i]);
-            free(RXDATA8_vol[i]);
-        }
-        free(RXDATA1_vol);
-        free(RXDATA2_vol);
-        free(RXDATA3_vol);
-        free(RXDATA4_vol);
-        free(RXDATA5_vol);
-        free(RXDATA6_vol);
-        free(RXDATA7_vol);
-        free(RXDATA8_vol);
-
         ///////// 2D-Range FFT code /////////
 
         double** range_rx1_same = (double**)malloc(Nd * sizeof(double*));
-
         for (int i = 0; i < Nd; i++) {
             range_rx1_same[i] = (double*)malloc(data_pt * sizeof(double));
         }
+
         for (int i = 24; i < (chirpperframe - 1); i++) {
             for (int j = 0; j < data_pt; j++) {
-                range_rx1_same[i - 24][j] = RAW_Rx1_data[i][j];
+
+                     
+                range_rx1_same[i - 24][j] = RAW_Rx[0][i][j];
             }
         }
 
@@ -586,38 +468,27 @@ int main()
             }
         }
 
+        for (int i = 0; i < Nd; i++) {
+            free(range_rx1_same[i]);
+        }
+        free(range_rx1_same);
+
         fftwf_plan plan = fftwf_plan_dft_2d(Nd, data_pt, input_2d, output_2d, FFTW_FORWARD, FFTW_ESTIMATE);
 
         fftwf_execute(plan);
 
-        fftwf_complex* fftd_2d = (fftwf_complex*)fftwf_malloc(sizeof(fftwf_complex) * Nd * data_pt);
-
-        for (int i = 0; i < (Nd * data_pt); ++i) {
-            fftd_2d[i][0] = 4 * output_2d[i][0] / (double)data_pt / (double)Nd;
-            fftd_2d[i][1] = 4 * output_2d[i][1] / (double)data_pt / (double)Nd;
-        }
-
         fftwf_free(input_2d);
         fftwf_destroy_plan(plan);
-        fftwf_free(output_2d);
 
+        // absolute
         float* magnitude_2d = (float*)malloc((Nd * data_pt) * sizeof(float));
 
         for (int i = 0; i < (Nd * data_pt); ++i) {
-            float real_2d = fftd_2d[i][0];
-            float imag_2d = fftd_2d[i][1];
+            float real_2d = output_2d[i][0];
+            float imag_2d = output_2d[i][1];
             magnitude_2d[i] = sqrt(real_2d * real_2d + imag_2d * imag_2d);
         }
-
-        fftwf_free(fftd_2d);
-
-        float* db_log = (float*)malloc((Nd * data_pt) * sizeof(float));
-
-        for (int i = 0; i < (Nd * data_pt); ++i) {
-            db_log[i] = 20 * log10(magnitude_2d[i] / 10) + 30;
-        }
-
-        free(magnitude_2d);
+        fftwf_free(output_2d);
 
         float** db_2d = (float**)malloc(Nd * sizeof(float*));
         for (int i = 0; i < Nd; ++i) {
@@ -626,11 +497,11 @@ int main()
 
         for (int i = 0; i < Nd; ++i) {
             for (int j = 0; j < data_pt; ++j) {
-                db_2d[i][j] = db_log[i * data_pt + j];
+                db_2d[i][j] = magnitude_2d[i * data_pt + j];
             }
         }
 
-        free(db_log);
+        free(magnitude_2d);
 
         fftshift_rows(db_2d, Nd, data_pt);
 
@@ -641,26 +512,18 @@ int main()
             range_doppler_cfar[i] = (float*)malloc(new_num_cols * sizeof(float));
         }
 
-        // CFAR 범위 값 집어넣기
-
         for (int i = 0; i < Nd; ++i) {
             for (int j = cfar_start; j <= cfar_end; ++j) {
                 range_doppler_cfar[i][j - cfar_start] = db_2d[i][j];
             }
         }
 
-        // 최솟값을 빼서 전체 데이터를 양수로 만들어주기
-
-        subtract_min_value(range_doppler_cfar, Nd, new_num_cols);
-
         int** cfar_result = (int**)malloc(Nd * sizeof(int*));
         for (int i = 0; i < Nd; ++i) {
             cfar_result[i] = (int*)malloc(new_num_cols * sizeof(int));
         }
 
-        // 2D CFAR 알고리즘 함수
-
-        cfar_2d(range_doppler_cfar, Nd, new_num_cols, num_train_range,
+        cfar_2d_prefixsum(range_doppler_cfar, Nd, new_num_cols, num_train_range,
             num_guard_range, num_train_doppler, num_guard_doppler,
             threshold_scale, cfar_result);
 
@@ -670,46 +533,43 @@ int main()
 
         int num_detections = find_peaks(cfar_result, Nd, new_num_cols, row_indices, col_indices);
 
+        if (num_detections == 0) {
+            for (int i = 0; i < Nd; ++i) {
+                free(cfar_result[i]);
+            }
+            free(cfar_result);
+            free(row_indices);
+            free(col_indices);
+            for (int i = 0; i < Nd; ++i) {
+                free(db_2d[i]);
+            }
+            free(db_2d);
+            for (int i = 0; i < Nd; ++i) {
+                free(range_doppler_cfar[i]);
+            }
+            free(range_doppler_cfar);
+
+            continue;
+        }
+
         int* row_indices_fin = (int*)malloc(max_detections * sizeof(int));
         int* col_indices_fin = (int*)malloc(max_detections * sizeof(int));
         int num_detections_fin = 0;
 
-        // 인접한 포인트를 삭제하는 코드
-
-        remove_adjacent_targets(row_indices, col_indices, &num_detections, range_doppler_cfar,
-            row_indices_fin, col_indices_fin, &num_detections_fin);
-
         // 인접한 포인트를 삭제하지 않는 코드
 
-        //num_detections_fin = num_detections;
-        //for (int i = 0; i < num_detections_fin; i++) {
-        //    row_indices_fin[i] = row_indices[i];
-        //    col_indices_fin[i] = col_indices[i];
-        //}
+        num_detections_fin = num_detections;
+        for (int i = 0; i < num_detections_fin; i++) {
+            row_indices_fin[i] = row_indices[i];
+            col_indices_fin[i] = col_indices[i];
+        }
 
         //cfar_start의 인덱스를 맞추는 코드
         for (int i = 0; i < num_detections_fin; i++) {
-            col_indices_fin[i] += cfar_start - 1;
+            col_indices_fin[i] += cfar_start;
         }
 
-        // cfar로 찾은 타겟 중 max 값 찾기
-
-        int* new_row_indices_fin = (int*)malloc(num_detections_fin * sizeof(int));
-        int* new_col_indices_fin = (int*)malloc(num_detections_fin * sizeof(int));
-
-        int new_num_detections_fin = 0;
-
-        for (int i = 0; i < num_detections_fin; ++i) {
-            int row = row_indices_fin[i];
-            int col = col_indices_fin[i];
-            float value = db_2d[row][col];
-
-            if (value >= power_theshold) {
-                new_row_indices_fin[new_num_detections_fin] = row;
-                new_col_indices_fin[new_num_detections_fin] = col;
-                new_num_detections_fin++;
-            }
-        }
+        // 2D CFAR 끝
 
         // range-doppler map 에서 반으로 자르기
 
@@ -717,30 +577,13 @@ int main()
         for (int i = 0; i < Nd; ++i) {
             plot_2d[i] = (float*)malloc((data_pt / 2) * sizeof(float));
         }
-
         for (int i = 0; i < Nd; ++i) {
             for (int j = 0; j < data_pt / 2; ++j) {
                 plot_2d[i][j] = db_2d[i][j];
             }
         }
 
-        for (int i = 0; i < Nd; ++i) {
-            free(cfar_result[i]);
-        }
-        free(cfar_result);
-        free(row_indices);
-        free(col_indices);
-        for (int i = 0; i < Nd; ++i) {
-            free(db_2d[i]);
-        }
-        free(db_2d);
-
-        for (int i = 0; i < Nd; ++i) {
-            free(range_doppler_cfar[i]);
-        }
-        free(range_doppler_cfar);
-
-        ///////// range plot code ///////// 1d 거리 플롯 코드(DEBUG)
+        ///////// 1D - range plot code ///////// 1d 거리 플롯 코드(DEBUG)
 
         //double* range_average = (double*)malloc(data_pt * sizeof(double));
         // //평균내기
@@ -793,8 +636,8 @@ int main()
         //    free(range_1d_log);
         //    float max_value = -FLT_MAX;  // Initialize to the lowest possible float value
         //    int max_index = -1;          // To store the index with the max value
-        //    for (int i = 0; i < new_num_detections_fin; ++i) {
-        //        int index = new_col_indices_fin[i];  // Get the column index from new_col_indices_fin
+        //    for (int i = 0; i < num_detections_fin; ++i) {
+        //        int index = col_indices_fin[i];  // Get the column index from col_indices_fin
         //        float value = range_1d_plot[index];  // Access the value at the specific index in range_1d_plot[990]
         //        // Check if the current value is the maximum
         //        if (value > max_value) {
@@ -810,7 +653,6 @@ int main()
         //gp << "set view map\n";
         //gp << "set size ratio -1\n";  // 1:1 비율
         //gp << "set palette rgbformulae 33,13,10\n";
-
         //거리 플롯
             //double scaling_factor = max_range / (data_pt/2);
             //주파수 플롯
@@ -825,10 +667,10 @@ int main()
             //gp << "set title 'Range Log Plot'\n";
             //gp << "set xlabel 'Range (cm)'\n";
             //gp << "set ylabel 'Amplitude (dBm)'\n";
-            //if (new_num_detections_fin > 0) {
+            //if (num_detections_fin > 0) {
             //    std::vector<std::pair<int, double>> detected_points;
-            //    for (int i = 0; i < new_num_detections_fin; ++i) {
-            //        int index = new_col_indices_fin[i];
+            //    for (int i = 0; i < num_detections_fin; ++i) {
+            //        int index = col_indices_fin[i];
             //        //double x_scaled = (index - 1) * scaling_factor;
             //        double x_scaled = (index) * scaling_factor;
             //        //detected_points.push_back(std::make_pair(x_scaled, range_1d_plot[(index - 1)]));
@@ -867,7 +709,7 @@ int main()
             //}
             //free(range_1d_plot);
 
-        ///////// range-doppler map 코드(DEBUG)
+        ///////// 2D - range-doppler map 코드(DEBUG)
 
         //gp << "set xrange [0:" << (data_pt / 2.0 - 1.0) << "]\n";
         //gp << "set yrange [0:" << (Nd - 1.0) << "]\n";
@@ -910,23 +752,46 @@ int main()
         //}
         //gp << "\n";
         //gp << "e\n";
-        //for (int i = 0; i < new_num_detections_fin; i++) {
+        //for (int i = 0; i < num_detections_fin; i++) {
         //    gp << col_indices_fin[i] << " " << row_indices_fin[i] << "\n";
         //}
         //gp << "e\n";
         //gp.flush();
 
+        //2D - PLOT 끝
 
-
+        for (int i = 0; i < Nd; ++i) {
+            free(cfar_result[i]);
+        }
+        free(cfar_result);
+        free(row_indices);
+        free(col_indices);
+        for (int i = 0; i < Nd; ++i) {
+            free(db_2d[i]);
+        }
+        free(db_2d);
+        for (int i = 0; i < Nd; ++i) {
+            free(range_doppler_cfar[i]);
+        }
+        free(range_doppler_cfar);
         for (int i = 0; i < Nd; ++i) {
             free(plot_2d[i]);
         }
         free(plot_2d);
         free(row_indices_fin);
-        free(col_indices_fin);
-        free(new_row_indices_fin);
 
-        ////////  ANGLE FFT  ////////        
+        ////////  ANGLE FFT  ////////
+
+        // TARGET 값 중에서 중복되는 거리의 데이터를 제거
+
+        int* unique_col_indices = (int*)malloc(max_detections * sizeof(int));
+        int unique_count = 0;
+
+        get_unique_col_indices_only_one(col_indices_fin, num_detections_fin, unique_col_indices, &unique_count);
+
+        free(col_indices_fin);
+
+        // FFT
 
         fftwf_complex** fftd_data_RX1 = (fftwf_complex**)malloc(24 * sizeof(fftwf_complex*));
         for (int i = 0; i < 24; ++i) {
@@ -961,68 +826,61 @@ int main()
             fftd_data_RX8[i] = (fftwf_complex*)fftwf_malloc(sizeof(fftwf_complex) * data_pt);
         }
 
-        perform_fft_on_raw_data(RAW_Rx1_data, data_pt, fftd_data_RX1);
-        perform_fft_on_raw_data(RAW_Rx2_data, data_pt, fftd_data_RX2);
-        perform_fft_on_raw_data(RAW_Rx3_data, data_pt, fftd_data_RX3);
-        perform_fft_on_raw_data(RAW_Rx4_data, data_pt, fftd_data_RX4);
-        perform_fft_on_raw_data(RAW_Rx5_data, data_pt, fftd_data_RX5);
-        perform_fft_on_raw_data(RAW_Rx6_data, data_pt, fftd_data_RX6);
-        perform_fft_on_raw_data(RAW_Rx7_data, data_pt, fftd_data_RX7);
-        perform_fft_on_raw_data(RAW_Rx8_data, data_pt, fftd_data_RX8);
+        perform_fft_on_raw_data(RAW_Rx[0], data_pt, fftd_data_RX1);
+        perform_fft_on_raw_data(RAW_Rx[1], data_pt, fftd_data_RX2);
+        perform_fft_on_raw_data(RAW_Rx[2], data_pt, fftd_data_RX3);
+        perform_fft_on_raw_data(RAW_Rx[3], data_pt, fftd_data_RX4);
+        perform_fft_on_raw_data(RAW_Rx[4], data_pt, fftd_data_RX5);
+        perform_fft_on_raw_data(RAW_Rx[5], data_pt, fftd_data_RX6);
+        perform_fft_on_raw_data(RAW_Rx[6], data_pt, fftd_data_RX7);
+        perform_fft_on_raw_data(RAW_Rx[7], data_pt, fftd_data_RX8);
 
-        for (int i = 0; i < (chirpperframe - 1); ++i) {
-            free(RAW_Rx1_data[i]);
-            free(RAW_Rx2_data[i]);
-            free(RAW_Rx3_data[i]);
-            free(RAW_Rx4_data[i]);
-            free(RAW_Rx5_data[i]);
-            free(RAW_Rx6_data[i]);
-            free(RAW_Rx7_data[i]);
-            free(RAW_Rx8_data[i]);
+        for (int ch = 0; ch < 8; ch++) {
+            for (int i = 0; i < (chirpperframe - 1); i++) {
+                free(RAW_Rx[ch][i]);
+            }
+            free(RAW_Rx[ch]);
         }
-        free(RAW_Rx1_data);
-        free(RAW_Rx2_data);
-        free(RAW_Rx3_data);
-        free(RAW_Rx4_data);
-        free(RAW_Rx5_data);
-        free(RAW_Rx6_data);
-        free(RAW_Rx7_data);
-        free(RAW_Rx8_data);
+        free(RAW_Rx);
 
         fftwf_complex*** target_fft_RAW = (fftwf_complex***)malloc(ch * sizeof(fftwf_complex**));
         for (int i = 0; i < ch; ++i) {
             target_fft_RAW[i] = (fftwf_complex**)fftwf_malloc(sizeof(fftwf_complex*) * 24);
             for (int j = 0; j < 24; ++j) {
-                target_fft_RAW[i][j] = (fftwf_complex*)fftwf_malloc(sizeof(fftwf_complex) * new_num_detections_fin);
+                target_fft_RAW[i][j] = (fftwf_complex*)fftwf_malloc(sizeof(fftwf_complex) * unique_count);
             }
         }
         fftwf_complex*** target_fft_cal = (fftwf_complex***)malloc(ch * sizeof(fftwf_complex**));
         for (int i = 0; i < ch; ++i) {
             target_fft_cal[i] = (fftwf_complex**)fftwf_malloc(sizeof(fftwf_complex*) * 24);
             for (int j = 0; j < 24; ++j) {
-                target_fft_cal[i][j] = (fftwf_complex*)fftwf_malloc(sizeof(fftwf_complex) * new_num_detections_fin);
+                target_fft_cal[i][j] = (fftwf_complex*)fftwf_malloc(sizeof(fftwf_complex) * unique_count);
             }
         }
 
-        for (int i = 0; i < new_num_detections_fin; i++) {
+        for (int i = 0; i < unique_count; i++) {
             for (int j = 0; j < 24; j++) {
-                target_fft_RAW[0][j][i][0] = fftd_data_RX1[j][new_col_indices_fin[i]][0];
-                target_fft_RAW[0][j][i][1] = fftd_data_RX1[j][new_col_indices_fin[i]][1];
-                target_fft_RAW[1][j][i][0] = fftd_data_RX2[j][new_col_indices_fin[i]][0];
-                target_fft_RAW[1][j][i][1] = fftd_data_RX2[j][new_col_indices_fin[i]][1];
-                target_fft_RAW[2][j][i][0] = fftd_data_RX3[j][new_col_indices_fin[i]][0];
-                target_fft_RAW[2][j][i][1] = fftd_data_RX3[j][new_col_indices_fin[i]][1];
-                target_fft_RAW[3][j][i][0] = fftd_data_RX4[j][new_col_indices_fin[i]][0];
-                target_fft_RAW[3][j][i][1] = fftd_data_RX4[j][new_col_indices_fin[i]][1];
-                target_fft_RAW[4][j][i][0] = fftd_data_RX5[j][new_col_indices_fin[i]][0];
-                target_fft_RAW[4][j][i][1] = fftd_data_RX5[j][new_col_indices_fin[i]][1];
-                target_fft_RAW[5][j][i][0] = fftd_data_RX6[j][new_col_indices_fin[i]][0];
-                target_fft_RAW[5][j][i][1] = fftd_data_RX6[j][new_col_indices_fin[i]][1];
-                target_fft_RAW[6][j][i][0] = fftd_data_RX7[j][new_col_indices_fin[i]][0];
-                target_fft_RAW[6][j][i][1] = fftd_data_RX7[j][new_col_indices_fin[i]][1];
-                target_fft_RAW[7][j][i][0] = fftd_data_RX8[j][new_col_indices_fin[i]][0];
-                target_fft_RAW[7][j][i][1] = fftd_data_RX8[j][new_col_indices_fin[i]][1];
+                target_fft_RAW[0][j][i][0] = fftd_data_RX1[j][unique_col_indices[i]][0];
+                target_fft_RAW[0][j][i][1] = fftd_data_RX1[j][unique_col_indices[i]][1];
+                target_fft_RAW[1][j][i][0] = fftd_data_RX2[j][unique_col_indices[i]][0];
+                target_fft_RAW[1][j][i][1] = fftd_data_RX2[j][unique_col_indices[i]][1];
+                target_fft_RAW[2][j][i][0] = fftd_data_RX3[j][unique_col_indices[i]][0];
+                target_fft_RAW[2][j][i][1] = fftd_data_RX3[j][unique_col_indices[i]][1];
+                target_fft_RAW[3][j][i][0] = fftd_data_RX4[j][unique_col_indices[i]][0];
+                target_fft_RAW[3][j][i][1] = fftd_data_RX4[j][unique_col_indices[i]][1];
+                target_fft_RAW[4][j][i][0] = fftd_data_RX5[j][unique_col_indices[i]][0];
+                target_fft_RAW[4][j][i][1] = fftd_data_RX5[j][unique_col_indices[i]][1];
+                target_fft_RAW[5][j][i][0] = fftd_data_RX6[j][unique_col_indices[i]][0];
+                target_fft_RAW[5][j][i][1] = fftd_data_RX6[j][unique_col_indices[i]][1];
+                target_fft_RAW[6][j][i][0] = fftd_data_RX7[j][unique_col_indices[i]][0];
+                target_fft_RAW[6][j][i][1] = fftd_data_RX7[j][unique_col_indices[i]][1];
+                target_fft_RAW[7][j][i][0] = fftd_data_RX8[j][unique_col_indices[i]][0];
+                target_fft_RAW[7][j][i][1] = fftd_data_RX8[j][unique_col_indices[i]][1];
             }
+        }
+        float* detected_ranges = (float*)malloc(max_detections * sizeof(float));
+        for (int i = 0; i < unique_count; i++) {
+            detected_ranges[i] = unique_col_indices[i] * scaling_factor;
         }
         for (int i = 0; i < 24; ++i) {
             fftwf_free(fftd_data_RX1[i]);
@@ -1042,21 +900,19 @@ int main()
         free(fftd_data_RX6);
         free(fftd_data_RX7);
         free(fftd_data_RX8);
-
-        free(new_col_indices_fin);
+        free(unique_col_indices);
 
         //calibration
-        for (int i = 0; i < new_num_detections_fin; i++) {
+        for (int i = 0; i < unique_count; i++) {
             for (int j = 0; j < 8; j++) {
-                for (int k = 0; k < 16; k++) {
+                for (int k = 0; k < 24; k++) {
                     fftwf_complex result;
                     complex_division(target_fft_RAW[j][k][i], fftwf_calibration_array[j][k], result);
-                    target_fft_cal[j][k][i][0] = result[0]; // Real part
-                    target_fft_cal[j][k][i][1] = result[1]; // Imaginary part
+                    target_fft_cal[j][k][i][0] = result[0];
+                    target_fft_cal[j][k][i][1] = result[1];
                 }
             }
         }
-
         for (int i = 0; i < ch; ++i) {
             for (int j = 0; j < 24; ++j) {
                 fftwf_free(target_fft_RAW[i][j]);
@@ -1065,11 +921,13 @@ int main()
         }
         free(target_fft_RAW);
 
+        // Mapping
+
         fftwf_complex** x_data = (fftwf_complex**)malloc(128 * sizeof(fftwf_complex*));
         for (int i = 0; i < 128; i++) {
-            x_data[i] = (fftwf_complex*)malloc(new_num_detections_fin * sizeof(fftwf_complex));
+            x_data[i] = (fftwf_complex*)malloc(unique_count * sizeof(fftwf_complex));
         }
-        for (int k = 0; k < new_num_detections_fin; k++)
+        for (int k = 0; k < unique_count; k++)
         {
             x_data[0][k][0] = target_fft_cal[0][0][k][0];
             x_data[0][k][1] = target_fft_cal[0][0][k][1];
@@ -1087,6 +945,7 @@ int main()
             x_data[6][k][1] = target_fft_cal[6][0][k][1];
             x_data[7][k][0] = target_fft_cal[7][0][k][0];
             x_data[7][k][1] = target_fft_cal[7][0][k][1];
+
             x_data[8][k][0] = target_fft_cal[4][1][k][0];
             x_data[8][k][1] = target_fft_cal[4][1][k][1];
             x_data[9][k][0] = target_fft_cal[5][1][k][0];
@@ -1103,6 +962,7 @@ int main()
             x_data[14][k][1] = target_fft_cal[6][2][k][1];
             x_data[15][k][0] = target_fft_cal[7][2][k][0];
             x_data[15][k][1] = target_fft_cal[7][2][k][1];
+
             x_data[16][k][0] = target_fft_cal[0][3][k][0];
             x_data[16][k][1] = target_fft_cal[0][3][k][1];
             x_data[17][k][0] = target_fft_cal[1][3][k][0];
@@ -1119,6 +979,7 @@ int main()
             x_data[22][k][1] = target_fft_cal[6][3][k][1];
             x_data[23][k][0] = target_fft_cal[7][3][k][0];
             x_data[23][k][1] = target_fft_cal[7][3][k][1];
+
             x_data[24][k][0] = target_fft_cal[4][4][k][0];
             x_data[24][k][1] = target_fft_cal[4][4][k][1];
             x_data[25][k][0] = target_fft_cal[5][4][k][0];
@@ -1135,6 +996,7 @@ int main()
             x_data[30][k][1] = target_fft_cal[6][5][k][1];
             x_data[31][k][0] = target_fft_cal[7][5][k][0];
             x_data[31][k][1] = target_fft_cal[7][5][k][1];
+
             x_data[32][k][0] = target_fft_cal[0][6][k][0];
             x_data[32][k][1] = target_fft_cal[0][6][k][1];
             x_data[33][k][0] = target_fft_cal[1][6][k][0];
@@ -1151,6 +1013,7 @@ int main()
             x_data[38][k][1] = target_fft_cal[6][6][k][1];
             x_data[39][k][0] = target_fft_cal[7][6][k][0];
             x_data[39][k][1] = target_fft_cal[7][6][k][1];
+
             x_data[40][k][0] = target_fft_cal[4][7][k][0];
             x_data[40][k][1] = target_fft_cal[4][7][k][1];
             x_data[41][k][0] = target_fft_cal[5][7][k][0];
@@ -1167,6 +1030,7 @@ int main()
             x_data[46][k][1] = target_fft_cal[6][8][k][1];
             x_data[47][k][0] = target_fft_cal[7][8][k][0];
             x_data[47][k][1] = target_fft_cal[7][8][k][1];
+
             x_data[48][k][0] = target_fft_cal[0][9][k][0];
             x_data[48][k][1] = target_fft_cal[0][9][k][1];
             x_data[49][k][0] = target_fft_cal[1][9][k][0];
@@ -1183,6 +1047,7 @@ int main()
             x_data[54][k][1] = target_fft_cal[6][9][k][1];
             x_data[55][k][0] = target_fft_cal[7][9][k][0];
             x_data[55][k][1] = target_fft_cal[7][9][k][1];
+
             x_data[56][k][0] = target_fft_cal[4][10][k][0];
             x_data[56][k][1] = target_fft_cal[4][10][k][1];
             x_data[57][k][0] = target_fft_cal[5][10][k][0];
@@ -1199,6 +1064,7 @@ int main()
             x_data[62][k][1] = target_fft_cal[6][11][k][1];
             x_data[63][k][0] = target_fft_cal[7][11][k][0];
             x_data[63][k][1] = target_fft_cal[7][11][k][1];
+
             x_data[64][k][0] = target_fft_cal[0][12][k][0];
             x_data[64][k][1] = target_fft_cal[0][12][k][1];
             x_data[65][k][0] = target_fft_cal[1][12][k][0];
@@ -1215,6 +1081,7 @@ int main()
             x_data[70][k][1] = target_fft_cal[6][12][k][1];
             x_data[71][k][0] = target_fft_cal[7][12][k][0];
             x_data[71][k][1] = target_fft_cal[7][12][k][1];
+
             x_data[72][k][0] = target_fft_cal[4][13][k][0];
             x_data[72][k][1] = target_fft_cal[4][13][k][1];
             x_data[73][k][0] = target_fft_cal[5][13][k][0];
@@ -1231,6 +1098,7 @@ int main()
             x_data[78][k][1] = target_fft_cal[6][14][k][1];
             x_data[79][k][0] = target_fft_cal[7][14][k][0];
             x_data[79][k][1] = target_fft_cal[7][14][k][1];
+
             x_data[80][k][0] = target_fft_cal[0][15][k][0];
             x_data[80][k][1] = target_fft_cal[0][15][k][1];
             x_data[81][k][0] = target_fft_cal[1][15][k][0];
@@ -1247,6 +1115,7 @@ int main()
             x_data[86][k][1] = target_fft_cal[6][15][k][1];
             x_data[87][k][0] = target_fft_cal[7][15][k][0];
             x_data[87][k][1] = target_fft_cal[7][15][k][1];
+
             x_data[88][k][0] = target_fft_cal[4][16][k][0];
             x_data[88][k][1] = target_fft_cal[4][16][k][1];
             x_data[89][k][0] = target_fft_cal[5][16][k][0];
@@ -1263,6 +1132,7 @@ int main()
             x_data[94][k][1] = target_fft_cal[6][17][k][1];
             x_data[95][k][0] = target_fft_cal[7][17][k][0];
             x_data[95][k][1] = target_fft_cal[7][17][k][1];
+
             x_data[96][k][0] = target_fft_cal[0][18][k][0];
             x_data[96][k][1] = target_fft_cal[0][18][k][1];
             x_data[97][k][0] = target_fft_cal[1][18][k][0];
@@ -1279,6 +1149,7 @@ int main()
             x_data[102][k][1] = target_fft_cal[6][18][k][1];
             x_data[103][k][0] = target_fft_cal[7][18][k][0];
             x_data[103][k][1] = target_fft_cal[7][18][k][1];
+
             x_data[104][k][0] = target_fft_cal[4][19][k][0];
             x_data[104][k][1] = target_fft_cal[4][19][k][1];
             x_data[105][k][0] = target_fft_cal[5][19][k][0];
@@ -1295,6 +1166,7 @@ int main()
             x_data[110][k][1] = target_fft_cal[6][20][k][1];
             x_data[111][k][0] = target_fft_cal[7][20][k][0];
             x_data[111][k][1] = target_fft_cal[7][20][k][1];
+
             x_data[112][k][0] = target_fft_cal[0][21][k][0];
             x_data[112][k][1] = target_fft_cal[0][21][k][1];
             x_data[113][k][0] = target_fft_cal[1][21][k][0];
@@ -1311,6 +1183,7 @@ int main()
             x_data[118][k][1] = target_fft_cal[6][21][k][1];
             x_data[119][k][0] = target_fft_cal[7][21][k][0];
             x_data[119][k][1] = target_fft_cal[7][21][k][1];
+
             x_data[120][k][0] = target_fft_cal[4][22][k][0];
             x_data[120][k][1] = target_fft_cal[4][22][k][1];
             x_data[121][k][0] = target_fft_cal[5][22][k][0];
@@ -1329,666 +1202,174 @@ int main()
             x_data[127][k][1] = target_fft_cal[7][23][k][1];
         }
 
-        for (int i = 0; i < ch; i++) {
-            for (int j = 0; j < 24; j++) {
+        for (int i = 0; i < ch; ++i) {
+            for (int j = 0; j < 24; ++j) {
                 fftwf_free(target_fft_cal[i][j]);
             }
-        }
-        for (int i = 0; i < ch; i++) {
             fftwf_free(target_fft_cal[i]);
         }
         free(target_fft_cal);
 
-        fftwf_complex** residual = allocate_complex_matrix(128, new_num_detections_fin);
-
-        for (int i = 0; i < 128; i++) {
-            for (int j = 0; j < new_num_detections_fin; j++) {
-                residual[i][j][0] = x_data[i][j][0];
-                residual[i][j][1] = x_data[i][j][1];
-            }
+        float** x_hat = (float**)malloc(2 * sizeof(float*));
+        for (int i = 0; i < 2; ++i) {
+            x_hat[i] = (float*)malloc(sizeof(float) * unique_count);
+        }
+        float** y_hat = (float**)malloc(2 * sizeof(float*));
+        for (int i = 0; i < 2; ++i) {
+            y_hat[i] = (float*)malloc(sizeof(float) * unique_count);
+        }
+        float** z_hat = (float**)malloc(2 * sizeof(float*));
+        for (int i = 0; i < 2; ++i) {
+            z_hat[i] = (float*)malloc(sizeof(float) * unique_count);
         }
 
-        fftwf_complex** A_steeringmatrix = allocate_complex_matrix(128, MAX_TARGET_NUMBER);
-        double* estimated_angle_pi = (double*)malloc(MAX_TARGET_NUMBER * sizeof(double));
-        double* estimated_angle_theta = (double*)malloc(MAX_TARGET_NUMBER * sizeof(double));
+        // 각도 추정 코드
 
-        fftwf_complex** weight = allocate_complex_matrix(RX_COUNT, TX_COUNT);
-        for (int i = 0; i < RX_COUNT; i++) {
-            for (int j = 0; j < TX_COUNT; j++) {
-                weight[i][j][0] = 1.0f;  // Real part
-                weight[i][j][1] = 0.0f;  // Imaginary part
+        for (int m = 0; m < unique_count; m++) {
+
+            fftwf_complex** A_steeringmatrix = (fftwf_complex**)malloc(128 * sizeof(fftwf_complex*));
+            for (int i = 0; i < 128; i++) {
+                A_steeringmatrix[i] = (fftwf_complex*)calloc(max_targetnumber, sizeof(fftwf_complex));
             }
-        }
 
-        fftwf_complex** Rx_final = allocate_complex_matrix(ROWS, COLS);
-        fftwf_complex** Rx_remove_final = allocate_complex_matrix(ROWS, COLS);
+            fftwf_complex* s_value = (fftwf_complex*)calloc(max_targetnumber, sizeof(fftwf_complex));
 
-        fftwf_complex Rx[TX_COUNT][RX_COUNT] = { 0 };
-
-        for (i = 0; i < TX_COUNT; i++) {
-            int Tx_x = Tx_x_position[i];
-            int Tx_y = Tx_y_position[i];
-
-            fftwf_complex** Rx_chip_1 = allocate_complex_matrix(ROWS, COLS);
-            fftwf_complex** Rx_chip_2 = allocate_complex_matrix(ROWS, COLS);
-            fftwf_complex** Rx_chip_3 = allocate_complex_matrix(ROWS, COLS);
-            fftwf_complex** Rx_chip_4 = allocate_complex_matrix(ROWS, COLS);
-
-            fftwf_complex** Rx_remove_chip_1 = allocate_complex_matrix(ROWS, COLS);
-            fftwf_complex** Rx_remove_chip_2 = allocate_complex_matrix(ROWS, COLS);
-            fftwf_complex** Rx_remove_chip_3 = allocate_complex_matrix(ROWS, COLS);
-            fftwf_complex** Rx_remove_chip_4 = allocate_complex_matrix(ROWS, COLS);
-
-            Rx_chip_1[12 + Tx_x][1 + Tx_y][0] = Rx[i][0][0];
-            Rx_chip_1[12 + Tx_x][2 + Tx_y][0] = Rx[i][1][0];
-            Rx_chip_1[12 + Tx_x][3 + Tx_y][0] = Rx[i][2][0];
-            Rx_chip_1[12 + Tx_x][4 + Tx_y][0] = Rx[i][3][0];
-            Rx_chip_1[12 + Tx_x][1 + Tx_y][1] = Rx[i][0][1];
-            Rx_chip_1[12 + Tx_x][2 + Tx_y][1] = Rx[i][1][1];
-            Rx_chip_1[12 + Tx_x][3 + Tx_y][1] = Rx[i][2][1];
-            Rx_chip_1[12 + Tx_x][4 + Tx_y][1] = Rx[i][3][1];
-
-            Rx_chip_2[1 + Tx_x][3 + Tx_y][0] = Rx[i][4][0];
-            Rx_chip_2[1 + Tx_x][4 + Tx_y][0] = Rx[i][5][0];
-            Rx_chip_2[1 + Tx_x][5 + Tx_y][0] = Rx[i][6][0];
-            Rx_chip_2[1 + Tx_x][6 + Tx_y][0] = Rx[i][7][0];
-            Rx_chip_2[1 + Tx_x][3 + Tx_y][1] = Rx[i][4][1];
-            Rx_chip_2[1 + Tx_x][4 + Tx_y][1] = Rx[i][5][1];
-            Rx_chip_2[1 + Tx_x][5 + Tx_y][1] = Rx[i][6][1];
-            Rx_chip_2[1 + Tx_x][6 + Tx_y][1] = Rx[i][7][1];
-
-            Rx_chip_3[8 + Tx_x][31 + Tx_y][0] = Rx[i][8][0];
-            Rx_chip_3[8 + Tx_x][32 + Tx_y][0] = Rx[i][9][0];
-            Rx_chip_3[8 + Tx_x][33 + Tx_y][0] = Rx[i][10][0];
-            Rx_chip_3[8 + Tx_x][34 + Tx_y][0] = Rx[i][11][0];
-            Rx_chip_3[8 + Tx_x][31 + Tx_y][1] = Rx[i][8][1];
-            Rx_chip_3[8 + Tx_x][32 + Tx_y][1] = Rx[i][9][1];
-            Rx_chip_3[8 + Tx_x][33 + Tx_y][1] = Rx[i][10][1];
-            Rx_chip_3[8 + Tx_x][34 + Tx_y][1] = Rx[i][11][1];
-
-            Rx_chip_4[15 + Tx_x][36 + Tx_y][0] = Rx[i][12][0];
-            Rx_chip_4[15 + Tx_x][37 + Tx_y][0] = Rx[i][13][0];
-            Rx_chip_4[15 + Tx_x][38 + Tx_y][0] = Rx[i][14][0];
-            Rx_chip_4[15 + Tx_x][39 + Tx_y][0] = Rx[i][15][0];
-            Rx_chip_4[15 + Tx_x][36 + Tx_y][1] = Rx[i][12][1];
-            Rx_chip_4[15 + Tx_x][37 + Tx_y][1] = Rx[i][13][1];
-            Rx_chip_4[15 + Tx_x][38 + Tx_y][1] = Rx[i][14][1];
-            Rx_chip_4[15 + Tx_x][39 + Tx_y][1] = Rx[i][15][1];
-
-            for (int r = 0; r < ROWS; r++) {
-                for (int c = 0; c < COLS; c++) {
-                    Rx_final[r][c][0] += Rx_chip_1[r][c][0] + Rx_chip_2[r][c][0] + Rx_chip_3[r][c][0] + Rx_chip_4[r][c][0];
-                    Rx_final[r][c][1] += Rx_chip_1[r][c][1] + Rx_chip_2[r][c][1] + Rx_chip_3[r][c][1] + Rx_chip_4[r][c][1];
+            fftwf_complex** residual = (fftwf_complex**)malloc(128 * sizeof(fftwf_complex*));
+            for (int i = 0; i < 128; i++) {
+                residual[i] = (fftwf_complex*)malloc(unique_count * sizeof(fftwf_complex));
+                for (int j = 0; j < unique_count; j++) {
+                    residual[i][j][0] = x_data[i][j][0];
+                    residual[i][j][1] = x_data[i][j][1];
                 }
             }
 
-            Rx_remove_chip_1[12 + Tx_x][1 + Tx_y][0] = weight[0][i][0] * Rx[i][0][0];
-            Rx_remove_chip_1[12 + Tx_x][2 + Tx_y][0] = weight[1][i][0] * Rx[i][1][0];
-            Rx_remove_chip_1[12 + Tx_x][3 + Tx_y][0] = weight[2][i][0] * Rx[i][2][0];
-            Rx_remove_chip_1[12 + Tx_x][4 + Tx_y][0] = weight[3][i][0] * Rx[i][3][0];
-            Rx_remove_chip_1[12 + Tx_x][1 + Tx_y][1] = weight[0][i][1] * Rx[i][0][1];
-            Rx_remove_chip_1[12 + Tx_x][2 + Tx_y][1] = weight[1][i][1] * Rx[i][1][1];
-            Rx_remove_chip_1[12 + Tx_x][3 + Tx_y][1] = weight[2][i][1] * Rx[i][2][1];
-            Rx_remove_chip_1[12 + Tx_x][4 + Tx_y][1] = weight[3][i][1] * Rx[i][3][1];
+            float norm_max = 0.0f;
 
-            Rx_remove_chip_2[1 + Tx_x][3 + Tx_y][0] = weight[4][i][0] * Rx[i][4][0];
-            Rx_remove_chip_2[1 + Tx_x][4 + Tx_y][0] = weight[5][i][0] * Rx[i][5][0];
-            Rx_remove_chip_2[1 + Tx_x][5 + Tx_y][0] = weight[6][i][0] * Rx[i][6][0];
-            Rx_remove_chip_2[1 + Tx_x][6 + Tx_y][0] = weight[7][i][0] * Rx[i][7][0];
-            Rx_remove_chip_2[1 + Tx_x][3 + Tx_y][1] = weight[4][i][1] * Rx[i][4][1];
-            Rx_remove_chip_2[1 + Tx_x][4 + Tx_y][1] = weight[5][i][1] * Rx[i][5][1];
-            Rx_remove_chip_2[1 + Tx_x][5 + Tx_y][1] = weight[6][i][1] * Rx[i][6][1];
-            Rx_remove_chip_2[1 + Tx_x][6 + Tx_y][1] = weight[7][i][1] * Rx[i][7][1];
+            for (int i = 0; i < 128; i++) {
+                float re = residual[i][m][0];
+                float im = residual[i][m][1];
+                norm_max += re * re + im * im;
+            }
 
-            Rx_remove_chip_3[8 + Tx_x][31 + Tx_y][0] = weight[8][i][0] * Rx[i][8][0];
-            Rx_remove_chip_3[8 + Tx_x][32 + Tx_y][0] = weight[9][i][0] * Rx[i][9][0];
-            Rx_remove_chip_3[8 + Tx_x][33 + Tx_y][0] = weight[10][i][0] * Rx[i][10][0];
-            Rx_remove_chip_3[8 + Tx_x][34 + Tx_y][0] = weight[11][i][0] * Rx[i][11][0];
-            Rx_remove_chip_3[8 + Tx_x][31 + Tx_y][1] = weight[8][i][1] * Rx[i][8][1];
-            Rx_remove_chip_3[8 + Tx_x][32 + Tx_y][1] = weight[9][i][1] * Rx[i][9][1];
-            Rx_remove_chip_3[8 + Tx_x][33 + Tx_y][1] = weight[10][i][1] * Rx[i][10][1];
-            Rx_remove_chip_3[8 + Tx_x][34 + Tx_y][1] = weight[11][i][1] * Rx[i][11][1];
+            norm_max = sqrtf(norm_max);
 
-            Rx_remove_chip_4[15 + Tx_x][36 + Tx_y][0] = weight[12][i][0] * Rx[i][12][0];
-            Rx_remove_chip_4[15 + Tx_x][37 + Tx_y][0] = weight[13][i][0] * Rx[i][13][0];
-            Rx_remove_chip_4[15 + Tx_x][38 + Tx_y][0] = weight[14][i][0] * Rx[i][14][0];
-            Rx_remove_chip_4[15 + Tx_x][39 + Tx_y][0] = weight[15][i][0] * Rx[i][15][0];
-            Rx_remove_chip_4[15 + Tx_x][36 + Tx_y][1] = weight[12][i][1] * Rx[i][12][1];
-            Rx_remove_chip_4[15 + Tx_x][37 + Tx_y][1] = weight[13][i][1] * Rx[i][13][1];
-            Rx_remove_chip_4[15 + Tx_x][38 + Tx_y][1] = weight[14][i][1] * Rx[i][14][1];
-            Rx_remove_chip_4[15 + Tx_x][39 + Tx_y][1] = weight[15][i][1] * Rx[i][15][1];
+            for (int k = 0; k < max_targetnumber; k++) {
 
-            for (int r = 0; r < ROWS; r++) {
-                for (int c = 0; c < COLS; c++) {
-                    Rx_remove_final[r][c][0] += Rx_remove_chip_1[r][c][0] + Rx_remove_chip_2[r][c][0] + Rx_remove_chip_3[r][c][0] + Rx_remove_chip_4[r][c][0];
-                    Rx_remove_final[r][c][1] += Rx_remove_chip_1[r][c][1] + Rx_remove_chip_2[r][c][1] + Rx_remove_chip_3[r][c][1] + Rx_remove_chip_4[r][c][1];
+                fftwf_complex** Rx = (fftwf_complex**)malloc(16 * sizeof(fftwf_complex*));
+                for (int i = 0; i < 16; i++) {
+                    Rx[i] = (fftwf_complex*)fftwf_malloc(8 * sizeof(fftwf_complex));
                 }
-            }
-
-            // Free dynamically allocated matrices
-            free_complex_matrix(Rx_chip_1, ROWS);
-            free_complex_matrix(Rx_chip_2, ROWS);
-            free_complex_matrix(Rx_chip_3, ROWS);
-            free_complex_matrix(Rx_chip_4, ROWS);
-        }
-
-        // Free allocated matrices
-        free_complex_matrix(Rx_final, ROWS);
-        free_complex_matrix(Rx_remove_final, ROWS);
-        free_complex_matrix(weight, RX_COUNT);
-
-
-
-
-
-
-
-
-    }
-}
-
-void spi_write(int address, int register_value)
-{
-    dev.SetWireInValue(0x03, register_value);
-    dev.SetWireInValue(0x04, 1 << address);
-    dev.UpdateWireIns();
-    dev.SetWireInValue(0x04, 0x0);
-    dev.UpdateWireIns();
-}
-
-void spi_write_DDS(int address, int register1, int register2)
-{
-    dev.SetWireInValue(0x02, register1);
-    dev.SetWireInValue(0x03, register2);
-    dev.SetWireInValue(0x05, 0x00000010);
-    dev.UpdateWireIns();
-    dev.SetWireInValue(0x05, 0x0);
-    dev.UpdateWireIns();
-}
-
-void transpose(int16_t* input, int16_t* output, int chirpperframe, int pt, int ch) {
-    int idx_in, idx_out;
-
-    for (int i = 0; i < ch; ++i) {
-        for (int j = 0; j < chirpperframe; ++j) {
-            for (int k = 0; k < pt; ++k) {
-                idx_in = j * pt * ch + k * ch + i;
-                idx_out = i * chirpperframe * pt + j * pt + k;
-                output[idx_out] = input[idx_in];
-            }
-        }
-    }
-}
-
-void save_output_to_csv(const char* filename, int16_t* output, int chirpperframe, int pt, int ch) {
-    FILE* file = fopen(filename, "w");
-    if (!file) {
-        perror("Failed to open file");
-        return;
-    }
-    for (int i = 0; i < ch; i++) {
-        for (int j = 0; j < chirpperframe; j++) {
-            for (int k = 0; k < pt; k++) {
-                int index = i * chirpperframe * pt + j * pt + k;
-                fprintf(file, "%d", output[index]);
-                if (k < pt - 1) {
-                    fprintf(file, ",");
+                for (int row = 0; row < 16; row++) {
+                    for (int col = 0; col < 8; col++) {
+                        Rx[row][col][0] = residual[row + col * 16][m][0];
+                        Rx[row][col][1] = residual[row + col * 16][m][1];
+                    }
                 }
-            }
-            fprintf(file, "\n");
-        }
-    }
-    fclose(file);
-}
 
-double calculate_average(double* data, int start, int end)
-{
-    double sum = 0.0;
-    for (int i = start; i < end; i++) {
-        sum += data[i];
-    }
-    return sum / (end - start);
-}
+                fftwf_complex* Rx_final = (fftwf_complex*)fftwf_malloc(sizeof(fftwf_complex) * angle_total_pt * angle_total_pt);
+                //fftwf_complex* Rx_remove_final = (fftwf_complex*)fftwf_malloc(sizeof(fftwf_complex) * angle_total_pt * angle_total_pt);
 
-void split_output_into_2d_arrays(int16_t* output, int chirpperframe, int pt,
-    int16_t** RXDATA1, int16_t** RXDATA2, int16_t** RXDATA3,
-    int16_t** RXDATA4, int16_t** RXDATA5, int16_t** RXDATA6,
-    int16_t** RXDATA7, int16_t** RXDATA8)
-{
-    int total_pts_per_channel = chirpperframe * pt;
-
-    for (int i = 0; i < chirpperframe; ++i) {
-        for (int j = 0; j < pt; ++j) {
-            int index = i * pt + j;
-            RXDATA1[i][j] = output[index];
-            RXDATA2[i][j] = output[index + total_pts_per_channel];
-            RXDATA3[i][j] = output[index + 2 * total_pts_per_channel];
-            RXDATA4[i][j] = output[index + 3 * total_pts_per_channel];
-            RXDATA5[i][j] = output[index + 4 * total_pts_per_channel];
-            RXDATA6[i][j] = output[index + 5 * total_pts_per_channel];
-            RXDATA7[i][j] = output[index + 6 * total_pts_per_channel];
-            RXDATA8[i][j] = output[index + 7 * total_pts_per_channel];
-        }
-    }
-}
-
-double calculate_mean(double* signal, int start, int end) {
-    double sum = 0.0;
-    for (int i = start; i <= end; i++) {
-        sum += signal[i];
-    }
-    return sum / (end - start + 1);
-}
-
-void CA_CFAR(double* signal, int len, int N_TRAIN, int N_GUARD, double T, double* cfar_output, int* detected_indices, int* detected_count) {
-    int i;
-    *detected_count = 0;
-    for (i = N_TRAIN + N_GUARD; i < len - (N_TRAIN + N_GUARD); i++) {
-        int start1 = i - (N_TRAIN + N_GUARD);
-        int end1 = i - (N_GUARD + 1);
-        int start2 = i + N_GUARD + 1;
-        int end2 = i + N_GUARD + N_TRAIN;
-
-        double mean1 = calculate_mean(signal, start1, end1);
-        double mean2 = calculate_mean(signal, start2, end2);
-        double noise_level = (mean1 + mean2) / 2.0;
-        double threshold = T * noise_level;
-
-        if (signal[i] > threshold) {
-            cfar_output[i] = 1;
-            detected_indices[*detected_count] = i;
-            (*detected_count)++;
-        }
-        else {
-            cfar_output[i] = 0;
-        }
-    }
-}
-
-int16_t* read_csv_to_array(const char* filename, int chirpperframe, int pt, int ch) {
-    int size = chirpperframe * pt * ch;
-    int16_t* array = (int16_t*)malloc(size * sizeof(int16_t));
-    if (!array) {
-        fprintf(stderr, "malloc fail.\n");
-        return NULL;
-    }
-
-    FILE* file = fopen(filename, "r");
-    if (!file) {
-        fprintf(stderr, "Error: Could not open file %s\n", filename);
-        free(array);
-        return NULL;
-    }
-
-    int i = 0;
-    while (true) {
-        // int16_t -> %hd
-        int ret = fscanf(file, "%hd,", &array[i]);
-        if (ret == EOF || ret <= 0) break;
-        i++;
-        if (i >= size) {
-            size *= 2;
-            int16_t* tmp = (int16_t*)realloc(array, size * sizeof(int16_t));
-            if (!tmp) {
-                fprintf(stderr, "realloc fail.\n");
-                fclose(file);
-                free(array);
-                return NULL;
-            }
-            array = tmp;
-        }
-    }
-    fclose(file);
-    return array;
-}
-
-void subtract_arrays(int16_t* output, int16_t* nodata, int16_t* result, int total_size) {
-    for (int i = 0; i < total_size; ++i) {
-        result[i] = output[i] - nodata[i];
-    }
-}
-
-void perform_fft_on_raw_data(double** RAW_Rx1_data, int data_pt, fftwf_complex** fftd_data) {
-    fftwf_plan p;
-    for (int i = 0; i < 24; ++i) {
-        fftwf_complex* fft_input = (fftwf_complex*)fftwf_malloc(sizeof(fftwf_complex) * data_pt);
-        fftwf_complex* fft_output = (fftwf_complex*)fftwf_malloc(sizeof(fftwf_complex) * data_pt);
-        for (int j = 0; j < data_pt; ++j) {
-            fft_input[j][0] = RAW_Rx1_data[i][j];
-            fft_input[j][1] = 0.0;
-        }
-        p = fftwf_plan_dft_1d(data_pt, fft_input, fft_output, FFTW_FORWARD, FFTW_ESTIMATE);
-        fftwf_execute(p);
-        for (int j = 0; j < data_pt; ++j) {
-            fftd_data[i][j][0] = 2 * fft_output[j][0] / data_pt;
-            fftd_data[i][j][1] = 2 * fft_output[j][1] / data_pt;
-        }
-        fftwf_free(fft_input);
-        fftwf_free(fft_output);
-    }
-}
-
-int load_complex_array(const char* file, const char* varname,
-    ComplexDouble*** complex_array, size_t* m, size_t* n)
-{
-    (void)varname; // 사용 안 함
-
-    FILE* fp = fopen(file, "r");
-    if (!fp) {
-        std::cerr << "[Error] Can't open file: " << file << std::endl;
-        return EXIT_FAILURE;
-    }
-
-    // 첫 줄에서 m, n 읽기( ASCII 로 [m n] )
-    size_t mm = 0, nn = 0;
-    if (fscanf(fp, "%zu %zu", &mm, &nn) != 2) {
-        std::cerr << "[Error] First line must have 'm n' format.\n";
-        fclose(fp);
-        return EXIT_FAILURE;
-    }
-    // 동적할당
-    ComplexDouble** arr = (ComplexDouble**)malloc(mm * sizeof(ComplexDouble*));
-    if (!arr) {
-        std::cerr << "[Error] malloc failed.\n";
-        fclose(fp);
-        return EXIT_FAILURE;
-    }
-    for (size_t i = 0; i < mm; i++) {
-        arr[i] = (ComplexDouble*)malloc(nn * sizeof(ComplexDouble));
-        if (!arr[i]) {
-            std::cerr << "[Error] malloc failed row " << i << "\n";
-            for (size_t k = 0; k < i; k++) {
-                free(arr[k]);
-            }
-            free(arr);
-            fclose(fp);
-            return EXIT_FAILURE;
-        }
-    }
-
-    // 이후 mm행 each line: nn 쌍 (re, im)
-    for (size_t i = 0; i < mm; i++) {
-        for (size_t j = 0; j < nn; j++) {
-            double re = 0, im = 0;
-            int ret = fscanf(fp, "%lf %lf", &re, &im);
-            if (ret != 2) {
-                std::cerr << "[Error] line " << (i + 2) << " read fail.\n";
-                for (size_t r = 0; r < mm; r++) {
-                    free(arr[r]);
+                for (int q = 0; q < angle_total_pt * angle_total_pt; ++q) {
+                    Rx_final[q][0] = 0.0f;
+                    Rx_final[q][1] = 0.0f;
+                    //Rx_remove_final[q][0] = 0.0f;
+                    //Rx_remove_final[q][1] = 0.0f;
                 }
-                free(arr);
-                fclose(fp);
-                return EXIT_FAILURE;
-            }
-            arr[i][j].real = re;
-            arr[i][j].imag = im;
-        }
-    }
 
-    fclose(fp);
-    *complex_array = arr;
-    *m = mm;
-    *n = nn;
+                for (int i = 0; i < 8; ++i) {
+                    fftwf_complex* Rx_chip_1 = (fftwf_complex*)calloc(angle_total_pt * angle_total_pt, sizeof(fftwf_complex));
+                    fftwf_complex* Rx_chip_2 = (fftwf_complex*)calloc(angle_total_pt * angle_total_pt, sizeof(fftwf_complex));
+                    fftwf_complex* Rx_chip_3 = (fftwf_complex*)calloc(angle_total_pt * angle_total_pt, sizeof(fftwf_complex));
+                    fftwf_complex* Rx_chip_4 = (fftwf_complex*)calloc(angle_total_pt * angle_total_pt, sizeof(fftwf_complex));
 
-    std::cout << "[Info] Loaded ASCII complex array: "
-        << mm << " x " << nn
-        << " from " << file << std::endl;
-    return EXIT_SUCCESS;
-}
+                    //fftwf_complex* Rx_remove_chip_1 = (fftwf_complex*)calloc(angle_total_pt * angle_total_pt, sizeof(fftwf_complex));
+                    //fftwf_complex* Rx_remove_chip_2 = (fftwf_complex*)calloc(angle_total_pt * angle_total_pt, sizeof(fftwf_complex));
+                    //fftwf_complex* Rx_remove_chip_3 = (fftwf_complex*)calloc(angle_total_pt * angle_total_pt, sizeof(fftwf_complex));
+                    //fftwf_complex* Rx_remove_chip_4 = (fftwf_complex*)calloc(angle_total_pt * angle_total_pt, sizeof(fftwf_complex));
 
-ComplexDouble complex_divide(ComplexDouble z1, ComplexDouble z2) {
-    ComplexDouble result;
-    double denominator;
-    denominator = z2.real * z2.real + z2.imag * z2.imag;
-    if (denominator == 0.0) {
-        printf("Error: Division by zero in complex division.\n");
-        result.real = 0.0;
-        result.imag = 0.0;
-        return result;
-    }
-    result.real = (z1.real * z2.real + z1.imag * z2.imag) / denominator;
-    result.imag = (z1.imag * z2.real - z1.real * z2.imag) / denominator;
-    return result;
-}
+                    int Tx_x = Tx_x_position[i];
+                    int Tx_y = Tx_y_position[i];
 
-void convert_to_fftwf_complex(ComplexDouble** calibration_array, size_t m, size_t n, fftwf_complex*** fftwf_calibration_array) {
-    *fftwf_calibration_array = (fftwf_complex**)malloc(m * sizeof(fftwf_complex*));
-    for (size_t i = 0; i < m; ++i) {
-        (*fftwf_calibration_array)[i] = (fftwf_complex*)fftwf_malloc(n * sizeof(fftwf_complex));
-    }
-    for (size_t i = 0; i < m; ++i) {
-        for (size_t j = 0; j < n; ++j) {
-            (*fftwf_calibration_array)[i][j][0] = calibration_array[i][j].real;
-            (*fftwf_calibration_array)[i][j][1] = calibration_array[i][j].imag;
-        }
-    }
-}
+                    for (int k = 0; k < 4; ++k) {
+                        int idx1 = (1 + Tx_y) * angle_total_pt + (67 + Tx_x - k);
+                        int idx2 = (8 + Tx_y) * angle_total_pt + (49 + Tx_x - k);
+                        int idx3 = (5 + Tx_y) * angle_total_pt + (34 + Tx_x - k);
+                        int idx4 = (12 + Tx_y) * angle_total_pt + (4 + Tx_x - k);
 
-fftwf_complex** allocate_fftwf_calibration_array(size_t m, size_t n) {
-    fftwf_complex** fftwf_calibration_array = (fftwf_complex**)malloc(m * sizeof(fftwf_complex*));
-    if (fftwf_calibration_array == NULL) {
-        perror("Failed to allocate memory for fftwf_calibration_array");
-        exit(EXIT_FAILURE);
-    }
-    for (size_t i = 0; i < m; ++i) {
-        fftwf_calibration_array[i] = (fftwf_complex*)fftwf_malloc(n * sizeof(fftwf_complex));
-        if (fftwf_calibration_array[i] == NULL) {
-            perror("Failed to allocate memory for fftwf_calibration_array row");
-            exit(EXIT_FAILURE);
-        }
-    }
+                        Rx_chip_1[idx1][0] = Rx[k][i][0]; Rx_chip_1[idx1][1] = Rx[k][i][1];
+                        Rx_chip_2[idx2][0] = Rx[k + 4][i][0]; Rx_chip_2[idx2][1] = Rx[k + 4][i][1];
+                        Rx_chip_3[idx3][0] = Rx[k + 8][i][0]; Rx_chip_3[idx3][1] = Rx[k + 8][i][1];
+                        Rx_chip_4[idx4][0] = Rx[k + 12][i][0]; Rx_chip_4[idx4][1] = Rx[k + 12][i][1];
 
-    return fftwf_calibration_array;
-}
+                        //Rx_remove_chip_1[idx1][0] = weight[k][i] * Rx[k][i][0];
+                        //Rx_remove_chip_1[idx1][1] = weight[k][i] * Rx[k][i][1];
+                        //Rx_remove_chip_2[idx2][0] = weight[k + 4][i] * Rx[k + 4][i][0];
+                        //Rx_remove_chip_2[idx2][1] = weight[k + 4][i] * Rx[k + 4][i][1];
+                        //Rx_remove_chip_3[idx3][0] = weight[k + 8][i] * Rx[k + 8][i][0];
+                        //Rx_remove_chip_3[idx3][1] = weight[k + 8][i] * Rx[k + 8][i][1];
+                        //Rx_remove_chip_4[idx4][0] = weight[k + 12][i] * Rx[k + 12][i][0];
+                        //Rx_remove_chip_4[idx4][1] = weight[k + 12][i] * Rx[k + 12][i][1];
+                    }
 
-void normalize_target_fft(fftwf_complex*** target_fft, fftwf_complex** fftwf_calibration_array, int target_dim1, int target_dim2, int target_dim3, fftwf_complex*** target_fft_cal) {
-    for (int i = 0; i < target_dim3; i++) {
-        for (int j = 0; j < target_dim1; j++) {
-            for (int k = 0; k < target_dim2; k++) {
-                double real_a = target_fft[j][k][i][0];
-                double imag_a = target_fft[j][k][i][1];
-                double real_b = fftwf_calibration_array[j][k][0];
-                double imag_b = fftwf_calibration_array[j][k][1];
-                double denominator = real_b * real_b + imag_b * imag_b;
-                target_fft_cal[j][k][i][0] = (real_a * real_b + imag_a * imag_b) / denominator;
-                target_fft_cal[j][k][i][1] = (imag_a * real_b - real_a * imag_b) / denominator;
-            }
-        }
-    }
-}
+                    for (int j = 0; j < angle_total_pt * angle_total_pt; ++j) {
+                        Rx_final[j][0] += Rx_chip_1[j][0] + Rx_chip_2[j][0] + Rx_chip_3[j][0] + Rx_chip_4[j][0];
+                        Rx_final[j][1] += Rx_chip_1[j][1] + Rx_chip_2[j][1] + Rx_chip_3[j][1] + Rx_chip_4[j][1];
 
-void sum_YY_arrays(int angle_fft_legth, fftwf_complex* YY1, fftwf_complex* YY2, fftwf_complex* YY3,
-    fftwf_complex* YY4, fftwf_complex* YY5, fftwf_complex* YY6,
-    fftwf_complex* YY7, fftwf_complex* YY8, fftwf_complex* YY) {
+                        //Rx_remove_final[j][0] += Rx_remove_chip_1[j][0] + Rx_remove_chip_2[j][0] + Rx_remove_chip_3[j][0] + Rx_remove_chip_4[j][0];
+                        //Rx_remove_final[j][1] += Rx_remove_chip_1[j][1] + Rx_remove_chip_2[j][1] + Rx_remove_chip_3[j][1] + Rx_remove_chip_4[j][1];
+                    }
 
-    int total_size = angle_fft_legth * angle_fft_legth;
-    for (int idx = 0; idx < total_size; ++idx) {
-        YY[idx][0] = YY1[idx][0] + YY2[idx][0] + YY3[idx][0] + YY4[idx][0]
-            + YY5[idx][0] + YY6[idx][0] + YY7[idx][0] + YY8[idx][0];
-        YY[idx][1] = YY1[idx][1] + YY2[idx][1] + YY3[idx][1] + YY4[idx][1]
-            + YY5[idx][1] + YY6[idx][1] + YY7[idx][1] + YY8[idx][1];
-    }
-}
-
-void d2_fftshift(fftwf_complex* data, int N) {
-    int halfN = N / 2;
-    fftwf_complex temp;
-    for (int i = 0; i < halfN; i++) {
-        for (int j = 0; j < halfN; j++) {
-            temp[0] = data[i * N + j][0];
-            temp[1] = data[i * N + j][1];
-            data[i * N + j][0] = data[(i + halfN) * N + (j + halfN)][0];
-            data[i * N + j][1] = data[(i + halfN) * N + (j + halfN)][1];
-            data[(i + halfN) * N + (j + halfN)][0] = temp[0];
-            data[(i + halfN) * N + (j + halfN)][1] = temp[1];
-            temp[0] = data[i * N + (j + halfN)][0];
-            temp[1] = data[i * N + (j + halfN)][1];
-            data[i * N + (j + halfN)][0] = data[(i + halfN) * N + j][0];
-            data[i * N + (j + halfN)][1] = data[(i + halfN) * N + j][1];
-            data[(i + halfN) * N + j][0] = temp[0];
-            data[(i + halfN) * N + j][1] = temp[1];
-        }
-    }
-}
-
-void subtract_min_value(float** range_doppler_cfar, int num_rows, int num_cols) {
-    float min_value = FLT_MAX;
-    for (int i = 0; i < num_rows; ++i) {
-        for (int j = 0; j < num_cols; ++j) {
-            if (range_doppler_cfar[i][j] < min_value) {
-                min_value = range_doppler_cfar[i][j];
-            }
-        }
-    }
-    for (int i = 0; i < num_rows; ++i) {
-        for (int j = 0; j < num_cols; ++j) {
-            range_doppler_cfar[i][j] -= min_value;
-        }
-    }
-}
-
-void cfar_2d(float** range_doppler_cfar, int num_rows, int num_cols, int num_train_cells_range,
-    int num_guard_cells_range, int num_train_cells_doppler, int num_guard_cells_doppler,
-    float threshold_scale, int** cfar_result) {
-
-    int total_train_range = num_train_cells_range + num_guard_cells_range;
-    int total_train_doppler = num_train_cells_doppler + num_guard_cells_doppler;
-    for (int r = total_train_range; r < num_rows - total_train_range; ++r) {
-        for (int d = total_train_doppler; d < num_cols - total_train_doppler; ++d) {
-
-            float noise_level = 0.0;
-            int num_training_cells = 0;
-            for (int i = r - total_train_range; i <= r + total_train_range; ++i) {
-                for (int j = d - total_train_doppler; j <= d + total_train_doppler; ++j) {
-                    if (abs(i - r) <= num_guard_cells_range && abs(j - d) <= num_guard_cells_doppler)
-                        continue;
-                    noise_level += range_doppler_cfar[i][j];
-                    num_training_cells++;
+                    free(Rx_chip_1); free(Rx_chip_2); free(Rx_chip_3); free(Rx_chip_4);
+                    //free(Rx_remove_chip_1); free(Rx_remove_chip_2); free(Rx_remove_chip_3); free(Rx_remove_chip_4);
                 }
-            }
-            float noise_avg = noise_level / num_training_cells;
-            float threshold = noise_avg * threshold_scale;
-            if (range_doppler_cfar[r][d] > threshold) {
-                cfar_result[r][d] = 1;
-            }
-            else {
-                cfar_result[r][d] = 0;
-            }
-        }
-    }
-    for (int r = 0; r < num_rows; ++r) {
-        for (int d = 0; d < num_cols; ++d) {
-            if (r < total_train_range || r >= num_rows - total_train_range ||
-                d < total_train_doppler || d >= num_cols - total_train_doppler) {
-                cfar_result[r][d] = 0;
-            }
-        }
-    }
-}
 
-int find_peaks(int** cfar_result, int num_rows, int num_cols, int* row_indices, int* col_indices) {
-    int count = 0;
-    for (int i = 0; i < num_rows; ++i) {
-        for (int j = 0; j < num_cols; ++j) {
-            if (cfar_result[i][j] == 1) {
-                row_indices[count] = i;
-                col_indices[count] = j;
-                count++;
-            }
-        }
-    }
-
-    return count;
-}
-
-void fftshift_rows(float** array, int num_rows, int num_cols) {
-    int mid_row = num_rows / 2;
-    for (int i = 0; i < mid_row; ++i) {
-        for (int j = 0; j < num_cols; ++j) {
-            float temp = array[i][j];
-            array[i][j] = array[mid_row + i][j];
-            array[mid_row + i][j] = temp;
-        }
-    }
-}
-
-void remove_adjacent_targets(int* row_indices, int* col_indices, int* num_detections,
-    float** range_doppler_cfar, int* row_indices_fin, int* col_indices_fin, int* num_detections_fin) {
-    int* valid = (int*)malloc(*num_detections * sizeof(int));
-    for (int i = 0; i < *num_detections; ++i) {
-        valid[i] = 1;
-    }
-    for (int i = 0; i < *num_detections; ++i) {
-        if (valid[i] == 0) {
-            continue;
-        }
-        for (int j = i + 1; j < *num_detections; ++j) {
-            if (valid[j] == 0) {
-                continue;
-            }
-            if (abs(row_indices[i] - row_indices[j]) <= 2 && abs(col_indices[i] - col_indices[j]) <= 2) {
-                if (range_doppler_cfar[row_indices[i]][col_indices[i]] >= range_doppler_cfar[row_indices[j]][col_indices[j]]) {
-                    valid[j] = 0;
+                for (int i = 0; i < 16; i++) {
+                    fftwf_free(Rx[i]);
                 }
-                else {
-                    valid[i] = 0;
-                    break;
+                free(Rx);
+
+                fftwf_complex* Rx_final_fft = (fftwf_complex*)fftwf_malloc(sizeof(fftwf_complex) * angle_total_pt * angle_total_pt);
+                //fftwf_complex* Rx_remove_final_fft = (fftwf_complex*)fftwf_malloc(sizeof(fftwf_complex) * angle_total_pt * angle_total_pt);
+
+                fftwf_plan plan_2d = fftwf_plan_dft_2d(angle_total_pt, angle_total_pt, Rx_final, Rx_final_fft, FFTW_FORWARD, FFTW_ESTIMATE);
+                //fftwf_plan plan_remove_2d = fftwf_plan_dft_2d(angle_total_pt, angle_total_pt, Rx_remove_final, Rx_remove_final_fft, FFTW_FORWARD, FFTW_ESTIMATE);
+
+                fftwf_execute(plan_2d);
+                //fftwf_execute(plan_remove_2d);
+
+                fftwf_complex* Rx_final_fft_shifted = (fftwf_complex*)fftwf_malloc(sizeof(fftwf_complex) * angle_total_pt * angle_total_pt);
+                //fftwf_complex* Rx_final_remove_fft_shifted = (fftwf_complex*)fftwf_malloc(sizeof(fftwf_complex) * angle_total_pt * angle_total_pt);
+
+                for (int i = 0; i < angle_total_pt; i++) {
+                    int shifted_i = (i + angle_total_pt / 2) % angle_total_pt;
+                    for (int j = 0; j < angle_total_pt; j++) {
+                        int shifted_j = (j + angle_total_pt / 2) % angle_total_pt;
+
+                        int original_idx = i * angle_total_pt + j;
+                        int shifted_idx = shifted_i * angle_total_pt + shifted_j;
+
+                        Rx_final_fft_shifted[shifted_idx][0] = Rx_final_fft[original_idx][0];
+                        Rx_final_fft_shifted[shifted_idx][1] = Rx_final_fft[original_idx][1];
+                        //Rx_final_remove_fft_shifted[shifted_idx][0] = Rx_remove_final_fft[original_idx][0];
+                        //Rx_final_remove_fft_shifted[shifted_idx][1] = Rx_remove_final_fft[original_idx][1];
+                    }
                 }
-            }
-        }
-    }
-    *num_detections_fin = 0;
-    for (int i = 0; i < *num_detections; ++i) {
-        if (valid[i] == 1) {
-            row_indices_fin[*num_detections_fin] = row_indices[i];
-            col_indices_fin[*num_detections_fin] = col_indices[i];
-            (*num_detections_fin)++;
-        }
-    }
-    free(valid);
-}
 
-double** allocate_matrix(int rows, int cols) {
-    double** matrix = (double**)malloc(rows * sizeof(double*));
-    for (int i = 0; i < rows; i++) {
-        matrix[i] = (double*)malloc(cols * sizeof(double));
-    }
-    return matrix;
-}
+                float* prod_Y_fft = (float*)malloc(sizeof(float) * angle_total_pt * angle_total_pt);
+                for (int i = 0; i < angle_total_pt; i++) {
+                    for (int j = 0; j < angle_total_pt; j++) {
+                        int idx = i * angle_total_pt + j;
+                        prod_Y_fft[idx] = sqrtf(Rx_final_fft_shifted[idx][0] * Rx_final_fft_shifted[idx][0] +
+                            Rx_final_fft_shifted[idx][1] * Rx_final_fft_shifted[idx][1]);
+                        //float mag_remove_rx = sqrtf(Rx_final_remove_fft_shifted[idx][0] * Rx_final_remove_fft_shifted[idx][0] +
+                        //    Rx_final_remove_fft_shifted[idx][1] * Rx_final_remove_fft_shifted[idx][1]);
+                    }
+                }
 
-// Function to allocate a 2D complex matrix
-fftwf_complex** allocate_complex_matrix(int rows, int cols) {
-    fftwf_complex** matrix = (fftwf_complex**)malloc(rows * sizeof(fftwf_complex*));
-    for (int i = 0; i < rows; i++) {
-        matrix[i] = (fftwf_complex*)malloc(cols * sizeof(fftwf_complex));
-    }
-    return matrix;
-}
-
-// Function to free a 2D matrix
-void free_matrix(double** matrix, int rows) {
-    for (int i = 0; i < rows; i++) {
-        free(matrix[i]);
-    }
-    free(matrix);
-}
-
-// Function to free a 2D complex matrix
-void free_complex_matrix(fftwf_complex** matrix, int rows) {
-    for (int i = 0; i < rows; i++) {
-        free(matrix[i]);
-    }
-    free(matrix);
-}
-
-void complex_division(fftwf_complex a, fftwf_complex b, fftwf_complex result) {
-    float denominator = (b[0] * b[0]) + (b[1] * b[1]); // |b|^2
-    if (denominator == 0.0f) { // Avoid division by zero
-        result[0] = 0.0f;
-        result[1] = 0.0f;
-    }
-    else {
-        result[0] = ((a[0] * b[0]) + (a[1] * b[1])) / denominator; // Real part
-        result[1] = ((a[1] * b[0]) - (a[0] * b[1])) / denominator; // Imaginary part
-    }
-}
+                fftwf_destroy_plan(plan_2d);
+                //fftwf_destroy_plan(plan_remove_2d);
+                fftwf_free(Rx_final);
+                fftwf_free(Rx_final_fft);
+                fftwf_free(Rx_final_fft_shifted);
+                //fftwf_free(Rx_remove_final_fft);
+                
