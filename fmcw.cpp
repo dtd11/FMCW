@@ -15,8 +15,8 @@
 #include <cmath>
 #include <complex.h>
 #include <cstdlib>
-#include <mat.h>
-#include <matrix.h>
+// #include <mat.h>
+// #include <matrix.h>
 #include <unordered_set>
 #include <thread>
 #include <chrono>
@@ -108,24 +108,24 @@ int main()
 
     // CSV 파일 저장 경로 filepath는 저장되는 파일 / nodata_filepath는 nodata파일
     const char* filepath = "D:\\backup\\measurement\\test\\test.csv";
-    const char* nodata_filepath = "D:\\backup\\measurement\\test\\250401_cal_data_1.csv";
+    const char* nodata_filepath = "D:\\backup\\measurement\\250408_8T16R\\3m_center_1.csv";
 
     // variable 정의
     // chirp setting 포인트 수(chirp이 바뀔 때마다 세팅)
     uint16_t pt = 2000;
-    uint16_t chirpperframe = (120 + 1);
+    uint16_t chirpperframe = (40 + 1);
     float cpt = (400e-6 - (1e-6));
 
     // CFAR 알고리즘 관련 변수
 
     int cfar_start = 0;
-    int cfar_end = 180;
+    int cfar_end = 100;
     int new_num_cols = cfar_end - cfar_start + 1;
     int num_train_range = 4;
     int num_guard_range = 0;
     int num_train_doppler = 4;
     int num_guard_doppler = 2;
-    float threshold_scale = 20;
+    float threshold_scale = 15;
 
     // variable (수정 거의 안하는 부분)
     uint8_t idle_pt = 0;
@@ -156,7 +156,8 @@ int main()
     //int16_t* nodata = (int16_t*)malloc(chirpperframe * pt * ch * sizeof(int16_t));
     //nodata = read_csv_to_array(nodata_filepath, chirpperframe, pt, ch);
 
-    // angle fft 관련 변수(건드리지 말기)
+    // angle fft 관련 변수
+    //calibration 데이터 (target_fft_save)의 경로를 적기 (중요!)
     const char* cali_file = "C:\\Users\\samsung\\Downloads\\ADC_test\\target_fft_save.mat";
     const char* varname = "target_fft_save";
     ComplexDouble** calibration_array;
@@ -188,18 +189,18 @@ int main()
 
     //// Radar 의 시작 코드
 
-    //if (dev.OpenBySerial() != okCFrontPanel::NoError) {
-    //    std::cerr << "Failed to open device." << std::endl;
-    //    return -1;
-    //}
+    if (dev.OpenBySerial() != okCFrontPanel::NoError) {
+        std::cerr << "Failed to open device." << std::endl;
+        return -1;
+    }
 
     //bitstream 파일 넣기(프로젝트 폴더에 bitstream 파일이 있어야 함!)
 
-    //error = dev.ConfigureFPGA("250331_94G_matching_ver2.bit");
-    //if (error != okCFrontPanel::NoError) {
-    //    std::cerr << "Failed to configure FPGA. Error code: " << error << std::endl;
-    //    return -1;
-    //}
+    error = dev.ConfigureFPGA("250331_94G_matching_ver2.bit");
+    if (error != okCFrontPanel::NoError) {
+        std::cerr << "Failed to configure FPGA. Error code: " << error << std::endl;
+        return -1;
+    }
 
     // Chirp setting
 
@@ -236,36 +237,36 @@ int main()
     // 반복 코드 시작
     while (1)
     {
-        //dev.SetWireInValue(0x00, 0x00000001);  // FIFO reset 1
-        //dev.UpdateWireIns();
-        //Sleep(0.001); // delay
-        //dev.SetWireInValue(0x06, 0x00000000);  // io_trigger 0
-        //dev.UpdateWireIns();
-        //Sleep(0.001); // delay
-        //dev.SetWireInValue(0x00, 0x00000002 + 0x00000008 * idle_chirp + 0x400000 * (chirpperframe));  // # FIFO reset 0
-        ////#                        pa on        idle chirp(2)   chirp per frame
-        //dev.UpdateWireIns();
-        //dev.SetWireInValue(0x01, 0x00000001 * idle_pt + 0x00010000 * pt);
-        ////#                         idle  pt           pt per chirp
-        //dev.UpdateWireIns();
-        ////ADC GAIN
-        //spi_write(0, 0x000004);
-        //spi_write(0, 0x99000F);
-        //spi_write(0, 0x9A0019);
-        //// io_trigger 1
-        //dev.SetWireInValue(0x06, 0x00000001); // io_trigger 1
-        //dev.UpdateWireIns();
-        //unsigned char* buffer = (unsigned char*)malloc(array_size * sizeof(unsigned char));
-        //dev.ReadFromBlockPipeOut(0xA3, BLOCK_SIZE, array_size, buffer);  // # pipeout(fpga > PC)
-        //int16_t* int16_buffer = (int16_t*)buffer; //int 16 자료형으로 변환
-        //int16_t* output = (int16_t*)malloc(total_pt * sizeof(int16_t)); //공간 할당
-        //transpose(int16_buffer, output, chirpperframe, pt, ch); //output으로 transpose(배열 순서 변경)
+        dev.SetWireInValue(0x00, 0x00000001);  // FIFO reset 1
+        dev.UpdateWireIns();
+        Sleep(0.001); // delay
+        dev.SetWireInValue(0x06, 0x00000000);  // io_trigger 0
+        dev.UpdateWireIns();
+        Sleep(0.001); // delay
+        dev.SetWireInValue(0x00, 0x00000002 + 0x00000008 * idle_chirp + 0x400000 * (chirpperframe));  // # FIFO reset 0
+        //#                        pa on        idle chirp(2)   chirp per frame
+        dev.UpdateWireIns();
+        dev.SetWireInValue(0x01, 0x00000001 * idle_pt + 0x00010000 * pt);
+        //#                         idle  pt           pt per chirp
+        dev.UpdateWireIns();
+        //ADC GAIN
+        spi_write(0, 0x000004);
+        spi_write(0, 0x99000F);
+        spi_write(0, 0x9A0019);
+        // io_trigger 1
+        dev.SetWireInValue(0x06, 0x00000001); // io_trigger 1
+        dev.UpdateWireIns();
+        unsigned char* buffer = (unsigned char*)malloc(array_size * sizeof(unsigned char));
+        dev.ReadFromBlockPipeOut(0xA3, BLOCK_SIZE, array_size, buffer);  // # pipeout(fpga > PC)
+        int16_t* int16_buffer = (int16_t*)buffer; //int 16 자료형으로 변환
+        int16_t* output = (int16_t*)malloc(total_pt * sizeof(int16_t)); //공간 할당
+        transpose(int16_buffer, output, chirpperframe, pt, ch); //output으로 transpose(배열 순서 변경)
 
         // CSV 파일 저장 코드
         //save_output_to_csv(filepath, output, chirpperframe, pt, ch);
         //free(buffer);
-        //nodata 빼는 코드
 
+        //nodata 빼는 코드
         //int16_t* result = (int16_t*)malloc(chirpperframe * pt * ch * sizeof(int16_t));
         //subtract_arrays(output, nodata, result, total_size);
 
@@ -290,8 +291,8 @@ int main()
         }
 
         //// NODATA 안 빼는 상황
-        //split_output_into_2d_arrays(output, chirpperframe, pt, RXDATA7, RXDATA8, RXDATA5, RXDATA6, RXDATA3, RXDATA4, RXDATA1, RXDATA2);
-        //free(output);
+        split_output_into_2d_arrays(output, chirpperframe, pt, RXDATA7, RXDATA8, RXDATA5, RXDATA6, RXDATA3, RXDATA4, RXDATA1, RXDATA2);
+        free(output);
 
         //// NODATA 빼는 상황
         //free(output);
@@ -301,10 +302,10 @@ int main()
         //nodata만 쓰기(디버깅용)
 
          //notarget data 관련 변수(건드리지 말기)
-        int16_t* nodata = (int16_t*)malloc(chirpperframe * pt * ch * sizeof(int16_t));
-        nodata = read_csv_to_array(nodata_filepath, chirpperframe, pt, ch);
-        split_output_into_2d_arrays(nodata, chirpperframe, pt, RXDATA7, RXDATA8, RXDATA5, RXDATA4, RXDATA3, RXDATA6, RXDATA1, RXDATA2);
-        free(nodata);
+        //int16_t* nodata = (int16_t*)malloc(chirpperframe * pt * ch * sizeof(int16_t));
+        //nodata = read_csv_to_array(nodata_filepath, chirpperframe, pt, ch);
+        //split_output_into_2d_arrays(nodata, chirpperframe, pt, RXDATA7, RXDATA8, RXDATA5, RXDATA4, RXDATA3, RXDATA6, RXDATA1, RXDATA2);
+        //free(nodata);
 
         //// rawdata 플롯(디버깅)
 
@@ -1445,7 +1446,6 @@ int main()
 
                 }
 
-
                 float residual_norm = 0.0f;
 
                 for (int i = 0; i < 128; ++i) {
@@ -1531,7 +1531,7 @@ int main()
         gp << "set title 'Elevation'\n";
         gp << "set xlabel 'y (m)'\n";
         gp << "set ylabel 'z (m)'\n";
-        gp << "set xrange [" << -10 << ":" << 10 << "]\n";
+        gp << "set xrange [" << 0 << ":" << 10 << "]\n";
         gp << "set yrange [" << -10 << ":" << 10 << "]\n";
         gp << "set grid\n";
         gp << "plot ";
@@ -1827,35 +1827,35 @@ void cfar_2d_prefixsum(float** range_doppler_cfar, int num_rows, int num_cols,
                 - prefix[r2 + 1][c1]
                 + prefix[r1][c1];
 
-                // Guard 영역의 좌표 설정
-                int gr1 = r - num_guard_cells_range;
-                int gc1 = d - num_guard_cells_doppler;
-                int gr2 = r + num_guard_cells_range;
-                int gc2 = d + num_guard_cells_doppler;
-                // Guard 영역의 합 계산
-                float guard_sum = prefix[gr2 + 1][gc2 + 1]
-                    - prefix[gr1][gc2 + 1]
-                    - prefix[gr2 + 1][gc1]
-                    + prefix[gr1][gc1];
+            // Guard 영역의 좌표 설정
+            int gr1 = r - num_guard_cells_range;
+            int gc1 = d - num_guard_cells_doppler;
+            int gr2 = r + num_guard_cells_range;
+            int gc2 = d + num_guard_cells_doppler;
+            // Guard 영역의 합 계산
+            float guard_sum = prefix[gr2 + 1][gc2 + 1]
+                - prefix[gr1][gc2 + 1]
+                - prefix[gr2 + 1][gc1]
+                + prefix[gr1][gc1];
 
-                    // Training 영역 (guard 제외) 총 합
-                    float noise_level = big_sum - guard_sum;
+            // Training 영역 (guard 제외) 총 합
+            float noise_level = big_sum - guard_sum;
 
-                    // 각 영역의 셀 개수 : 큰 영역과 guard 영역은 정해진 크기를 가짐
-                    int area_big = (2 * total_train_range + 1) * (2 * total_train_doppler + 1);
-                    int area_guard = (2 * num_guard_cells_range + 1) * (2 * num_guard_cells_doppler + 1);
-                    int num_training_cells = area_big - area_guard;
+            // 각 영역의 셀 개수 : 큰 영역과 guard 영역은 정해진 크기를 가짐
+            int area_big = (2 * total_train_range + 1) * (2 * total_train_doppler + 1);
+            int area_guard = (2 * num_guard_cells_range + 1) * (2 * num_guard_cells_doppler + 1);
+            int num_training_cells = area_big - area_guard;
 
-                    float noise_avg = noise_level / num_training_cells;
-                    float threshold = noise_avg * threshold_scale;
-                    // CFAR 결과 적용: 중심 셀 값이 threshold보다 크면 1, 아니면 0
-                    if (range_doppler_cfar[r][d] > threshold) {
-                        detected_peaks.push_back(std::make_pair(r, d)); // find_peaks 함수 따로 구현할 필요 x 
-                        cfar_result[r][d] = 1;
-                    }
-                    else {
-                        cfar_result[r][d] = 0;
-                    }
+            float noise_avg = noise_level / num_training_cells;
+            float threshold = noise_avg * threshold_scale;
+            // CFAR 결과 적용: 중심 셀 값이 threshold보다 크면 1, 아니면 0
+            if (range_doppler_cfar[r][d] > threshold) {
+                detected_peaks.push_back(std::make_pair(r, d)); // find_peaks 함수 따로 구현할 필요 x 
+                cfar_result[r][d] = 1;
+            }
+            else {
+                cfar_result[r][d] = 0;
+            }
         }
     }
 
