@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -Wall -Wextra -O2 -std=c++17
+CXXFLAGS = -Wall -Wextra -O2 -std=c++17 -Wno-unused-variable -Wno-unused-parameter
 LIBS = -lfftw3 -lm -lboost_iostreams
 
 all: test
