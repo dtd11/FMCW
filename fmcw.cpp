@@ -15,8 +15,8 @@
 #include <cmath>
 #include <complex.h>
 #include <cstdlib>
-// #include <mat.h>
-// #include <matrix.h>
+// #include "mat.h"
+// #include "matrix.h"
 #include <unordered_set>
 #include <thread>
 #include <chrono>
@@ -103,12 +103,12 @@ void compute_residual(fftwf_complex** residual, fftwf_complex** x_data, fftwf_co
 
 int main()
 {
-    // 컴퓨터에서 gnuplot.exe이 있는 경로로 저장(설치 방법 따르면 거의 비슷함)
-    Gnuplot gp("\"C:\\Program Files\\gnuplot\\bin\\gnuplot.exe\"");
-
+    // Linux에선 gnuplot 실행 파일이 시스템 PATH에 등록되어 있음, 컴퓨터에서 gnuplot.exe이 있는 경로로 저장(설치 방법 따르면 거의 비슷함)
+    // Gnuplot gp("\"C:\\Program Files\\gnuplot\\bin\\gnuplot.exe\"");
+    Gnuplot gp;
     // CSV 파일 저장 경로 filepath는 저장되는 파일 / nodata_filepath는 nodata파일
-    const char* filepath = "D:\\backup\\measurement\\test\\test.csv";
-    const char* nodata_filepath = "D:\\backup\\measurement\\250408_8T16R\\3m_center_1.csv";
+    const char* filepath = "/home/dtd11/FMCW/3m_rignt_20_1.csv";
+    const char* nodata_filepath = "/home/dtd11/FMCW/3m_rignt_20_1.csv";
 
     // variable 정의
     // chirp setting 포인트 수(chirp이 바뀔 때마다 세팅)
@@ -239,10 +239,10 @@ int main()
     {
         dev.SetWireInValue(0x00, 0x00000001);  // FIFO reset 1
         dev.UpdateWireIns();
-        Sleep(0.001); // delay
+        sleep(0.001); // delay
         dev.SetWireInValue(0x06, 0x00000000);  // io_trigger 0
         dev.UpdateWireIns();
-        Sleep(0.001); // delay
+        sleep(0.001); // delay
         dev.SetWireInValue(0x00, 0x00000002 + 0x00000008 * idle_chirp + 0x400000 * (chirpperframe));  // # FIFO reset 0
         //#                        pa on        idle chirp(2)   chirp per frame
         dev.UpdateWireIns();
@@ -1611,13 +1611,11 @@ void transpose(int16_t* input, int16_t* output, int chirpperframe, int pt, int c
 }
 
 void save_output_to_csv(const char* filename, int16_t* output, int chirpperframe, int pt, int ch) {
-    FILE* file;
-    errno_t err = fopen_s(&file, filename, "w");
-    if (err != 0) {
+    FILE* file = fopen(filename, "w");
+    if (file == NULL) {
         perror("Failed to open file");
         return;
     }
-
     for (int i = 0; i < ch; ++i) {
         for (int j = 0; j < chirpperframe; ++j) {
             for (int k = 0; k < pt; ++k) {
@@ -1658,23 +1656,20 @@ void split_output_into_2d_arrays(int16_t* output, int chirpperframe, int pt,
 int16_t* read_csv_to_array(const char* filename, int chripperframe, int pt, int ch) {
     int16_t* array;
     int i = 0;
-    int size = chripperframe * pt * ch;
-    FILE* file;
-    errno_t err;
     array = (int16_t*)malloc(size * sizeof(int16_t));
     if (array == NULL) {
         printf("Error: Memory allocation failed\n");
         return NULL;
     }
 
-    err = fopen_s(&file, filename, "r");
-    if (err != 0) {
-        printf("Error: Could not open file %s\n", filename);
-        free(array);
+    FILE* file = fopen(filename, "r");
+    if (!file) {
+        perror("fopen");
+        delete[] array;
         return NULL;
     }
 
-    while (fscanf_s(file, "%d,", &array[i]) != EOF) {
+    while (fscanf(file, "%hd,", &array[i]) != EOF) {
         i++;
         if (i >= size) {
             size *= 2;
@@ -2014,7 +2009,7 @@ void compute_Ahx(fftwf_complex A[128][2], fftwf_complex x[128], fftwf_complex Ah
 }
 
 int invert_2x2(fftwf_complex m[2][2], fftwf_complex inv[2][2]) {
-    fftwf_complex det, a, b, c, d, neg;
+    fftwf_complex det, a, neg;
     complex_mul(det, m[0][0], m[1][1]);
 
     complex_mul(a, m[0][1], m[1][0]);
