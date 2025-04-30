@@ -6,7 +6,7 @@
 #include <stdint.h>
 #include <math.h>
 #include <iostream>
-#include "okFrontPanelDLL.h"
+// #include "okFrontPanelDLL.h"
 #include "gnuplot-iostream.h"
 #include <fstream>
 #include <utility>
@@ -15,18 +15,19 @@
 #include <cmath>
 #include <complex.h>
 #include <cstdlib>
-// #include "mat.h"
-// #include "matrix.h"
+#include <matio.h>
 #include <unordered_set>
 #include <thread>
 #include <chrono>
+#include <cstdlib>
+#include <cstdio>
 
 #define _CRT_SECURE_NO_WARNINGS
 #define BLOCK_SIZE 16
 #define PI 3.14159265358979323846
 
-okCFrontPanel dev;
-okCFrontPanel::ErrorCode error;
+// okCFrontPanel dev;
+// okCFrontPanel::ErrorCode error;
 
 typedef struct {
     double real;
@@ -37,9 +38,9 @@ void transpose(int16_t* input, int16_t* output, int chirpperframe, int pt, int c
 
 void save_output_to_csv(const char* filename, int16_t* output, int chirpperframe, int pt, int ch);
 
-void spi_write(int address, int register_value);
+// void spi_write(int address, int register_value);
 
-void spi_write_DDS(int address, int register1, int register2);
+// void spi_write_DDS(int address, int register1, int register2);
 
 void split_output_into_2d_arrays(int16_t* output, int chirpperframe, int pt,
     int16_t** RXDATA1, int16_t** RXDATA2, int16_t** RXDATA3,
@@ -158,7 +159,7 @@ int main()
 
     // angle fft 관련 변수
     //calibration 데이터 (target_fft_save)의 경로를 적기 (중요!)
-    const char* cali_file = "C:\\Users\\samsung\\Downloads\\ADC_test\\target_fft_save.mat";
+    const char* cali_file = "/home/dtd11/FMCW/target_fft_save.mat";
     const char* varname = "target_fft_save";
     ComplexDouble** calibration_array;
     size_t m, n;
@@ -189,18 +190,18 @@ int main()
 
     //// Radar 의 시작 코드
 
-    if (dev.OpenBySerial() != okCFrontPanel::NoError) {
-        std::cerr << "Failed to open device." << std::endl;
-        return -1;
-    }
+    // if (dev.OpenBySerial() != okCFrontPanel::NoError) {
+    //     std::cerr << "Failed to open device." << std::endl;
+    //     return -1;
+    // }
 
     //bitstream 파일 넣기(프로젝트 폴더에 bitstream 파일이 있어야 함!)
 
-    error = dev.ConfigureFPGA("250331_94G_matching_ver2.bit");
-    if (error != okCFrontPanel::NoError) {
-        std::cerr << "Failed to configure FPGA. Error code: " << error << std::endl;
-        return -1;
-    }
+    // error = dev.ConfigureFPGA("250331_94G_matching_ver2.bit");
+    // if (error != okCFrontPanel::NoError) {
+    //     std::cerr << "Failed to configure FPGA. Error code: " << error << std::endl;
+    //     return -1;
+    // }
 
     // Chirp setting
 
@@ -215,14 +216,14 @@ int main()
     //spi_write(4, 0xF8136000);
 
     //(93~95G,2GHz, 41.675MHz) 400us_200us
-    spi_write(4, 0x00034E27);
-    spi_write(4, 0x00001F46);
-    spi_write(4, 0x00281B55);
-    spi_write(4, 0x00780284);
-    spi_write(4, 0x014300C3);
-    spi_write(4, 0x07208022);
-    spi_write(4, 0x00000001);
-    spi_write(4, 0xF8136000);
+    // spi_write(4, 0x00034E27);
+    // spi_write(4, 0x00001F46);
+    // spi_write(4, 0x00281B55);
+    // spi_write(4, 0x00780284);
+    // spi_write(4, 0x014300C3);
+    // spi_write(4, 0x07208022);
+    // spi_write(4, 0x00000001);
+    // spi_write(4, 0xF8136000);
 
     //(93~95G,2GHz, 41.675MHz) 800us_400us
     //spi_write(4, 0x00034E27); 
@@ -237,30 +238,30 @@ int main()
     // 반복 코드 시작
     while (1)
     {
-        dev.SetWireInValue(0x00, 0x00000001);  // FIFO reset 1
-        dev.UpdateWireIns();
-        sleep(0.001); // delay
-        dev.SetWireInValue(0x06, 0x00000000);  // io_trigger 0
-        dev.UpdateWireIns();
-        sleep(0.001); // delay
-        dev.SetWireInValue(0x00, 0x00000002 + 0x00000008 * idle_chirp + 0x400000 * (chirpperframe));  // # FIFO reset 0
-        //#                        pa on        idle chirp(2)   chirp per frame
-        dev.UpdateWireIns();
-        dev.SetWireInValue(0x01, 0x00000001 * idle_pt + 0x00010000 * pt);
-        //#                         idle  pt           pt per chirp
-        dev.UpdateWireIns();
-        //ADC GAIN
-        spi_write(0, 0x000004);
-        spi_write(0, 0x99000F);
-        spi_write(0, 0x9A0019);
-        // io_trigger 1
-        dev.SetWireInValue(0x06, 0x00000001); // io_trigger 1
-        dev.UpdateWireIns();
-        unsigned char* buffer = (unsigned char*)malloc(array_size * sizeof(unsigned char));
-        dev.ReadFromBlockPipeOut(0xA3, BLOCK_SIZE, array_size, buffer);  // # pipeout(fpga > PC)
-        int16_t* int16_buffer = (int16_t*)buffer; //int 16 자료형으로 변환
-        int16_t* output = (int16_t*)malloc(total_pt * sizeof(int16_t)); //공간 할당
-        transpose(int16_buffer, output, chirpperframe, pt, ch); //output으로 transpose(배열 순서 변경)
+        // dev.SetWireInValue(0x00, 0x00000001);  // FIFO reset 1
+        // dev.UpdateWireIns();
+        // sleep(0.001); // delay
+        // dev.SetWireInValue(0x06, 0x00000000);  // io_trigger 0
+        // dev.UpdateWireIns();
+        // sleep(0.001); // delay
+        // dev.SetWireInValue(0x00, 0x00000002 + 0x00000008 * idle_chirp + 0x400000 * (chirpperframe));  // # FIFO reset 0
+        // //#                        pa on        idle chirp(2)   chirp per frame
+        // dev.UpdateWireIns();
+        // dev.SetWireInValue(0x01, 0x00000001 * idle_pt + 0x00010000 * pt);
+        // //#                         idle  pt           pt per chirp
+        // dev.UpdateWireIns();
+        // //ADC GAIN
+        // spi_write(0, 0x000004);
+        // spi_write(0, 0x99000F);
+        // spi_write(0, 0x9A0019);
+        // // io_trigger 1
+        // dev.SetWireInValue(0x06, 0x00000001); // io_trigger 1
+        // dev.UpdateWireIns();
+        // unsigned char* buffer = (unsigned char*)malloc(array_size * sizeof(unsigned char));
+        // dev.ReadFromBlockPipeOut(0xA3, BLOCK_SIZE, array_size, buffer);  // # pipeout(fpga > PC)
+        // int16_t* int16_buffer = (int16_t*)buffer; //int 16 자료형으로 변환
+        // int16_t* output = (int16_t*)malloc(total_pt * sizeof(int16_t)); //공간 할당
+        // transpose(int16_buffer, output, chirpperframe, pt, ch); //output으로 transpose(배열 순서 변경)
 
         // CSV 파일 저장 코드
         //save_output_to_csv(filepath, output, chirpperframe, pt, ch);
@@ -291,8 +292,8 @@ int main()
         }
 
         //// NODATA 안 빼는 상황
-        split_output_into_2d_arrays(output, chirpperframe, pt, RXDATA7, RXDATA8, RXDATA5, RXDATA6, RXDATA3, RXDATA4, RXDATA1, RXDATA2);
-        free(output);
+        // split_output_into_2d_arrays(output, chirpperframe, pt, RXDATA7, RXDATA8, RXDATA5, RXDATA6, RXDATA3, RXDATA4, RXDATA1, RXDATA2);
+        // free(output);
 
         //// NODATA 빼는 상황
         //free(output);
@@ -301,11 +302,11 @@ int main()
 
         //nodata만 쓰기(디버깅용)
 
-         //notarget data 관련 변수(건드리지 말기)
-        //int16_t* nodata = (int16_t*)malloc(chirpperframe * pt * ch * sizeof(int16_t));
-        //nodata = read_csv_to_array(nodata_filepath, chirpperframe, pt, ch);
-        //split_output_into_2d_arrays(nodata, chirpperframe, pt, RXDATA7, RXDATA8, RXDATA5, RXDATA4, RXDATA3, RXDATA6, RXDATA1, RXDATA2);
-        //free(nodata);
+        //  notarget data 관련 변수(건드리지 말기)
+        int16_t* nodata = (int16_t*)malloc(chirpperframe * pt * ch * sizeof(int16_t));
+        nodata = read_csv_to_array(nodata_filepath, chirpperframe, pt, ch);
+        split_output_into_2d_arrays(nodata, chirpperframe, pt, RXDATA7, RXDATA8, RXDATA5, RXDATA4, RXDATA3, RXDATA6, RXDATA1, RXDATA2);
+        free(nodata);
 
         //// rawdata 플롯(디버깅)
 
@@ -1577,24 +1578,24 @@ int main()
 }
 
 
-void spi_write(int address, int register_value)
-{
-    dev.SetWireInValue(0x03, register_value);
-    dev.SetWireInValue(0x04, 1 << address);
-    dev.UpdateWireIns();
-    dev.SetWireInValue(0x04, 0x0);
-    dev.UpdateWireIns();
-}
+// void spi_write(int address, int register_value)
+// {
+//     dev.SetWireInValue(0x03, register_value);
+//     dev.SetWireInValue(0x04, 1 << address);
+//     dev.UpdateWireIns();
+//     dev.SetWireInValue(0x04, 0x0);
+//     dev.UpdateWireIns();
+// }
 
-void spi_write_DDS(int address, int register1, int register2)
-{
-    dev.SetWireInValue(0x02, register1);
-    dev.SetWireInValue(0x03, register2);
-    dev.SetWireInValue(0x05, 0x00000010);
-    dev.UpdateWireIns();
-    dev.SetWireInValue(0x05, 0x0);
-    dev.UpdateWireIns();
-}
+// void spi_write_DDS(int address, int register1, int register2)
+// {
+//     dev.SetWireInValue(0x02, register1);
+//     dev.SetWireInValue(0x03, register2);
+//     dev.SetWireInValue(0x05, 0x00000010);
+//     dev.UpdateWireIns();
+//     dev.SetWireInValue(0x05, 0x0);
+//     dev.UpdateWireIns();
+// }
 
 void transpose(int16_t* input, int16_t* output, int chirpperframe, int pt, int ch) {
     int idx_in, idx_out;
@@ -1656,6 +1657,7 @@ void split_output_into_2d_arrays(int16_t* output, int chirpperframe, int pt,
 int16_t* read_csv_to_array(const char* filename, int chripperframe, int pt, int ch) {
     int16_t* array;
     int i = 0;
+    int size = chripperframe * pt * ch;
     array = (int16_t*)malloc(size * sizeof(int16_t));
     if (array == NULL) {
         printf("Error: Memory allocation failed\n");
@@ -1665,7 +1667,7 @@ int16_t* read_csv_to_array(const char* filename, int chripperframe, int pt, int 
     FILE* file = fopen(filename, "r");
     if (!file) {
         perror("fopen");
-        delete[] array;
+        free(array);
         return NULL;
     }
 
@@ -1711,44 +1713,44 @@ void perform_fft_on_raw_data(double** RAW_Rx1_data, int data_pt, fftwf_complex**
     }
 }
 
-int load_complex_array(const char* file, const char* varname, ComplexDouble*** complex_array, size_t* m, size_t* n) {
-    MATFile* pmat;
-    mxArray* pa;
-    ComplexDouble* data;
-    size_t i, j;
-    pmat = matOpen(file, "r");
-    if (pmat == NULL) {
-        printf("Error opening file %s\n", file);
-        return(EXIT_FAILURE);
+int load_complex_array(const char* file, const char* varname,
+        ComplexDouble*** complex_array, size_t* m, size_t* n)
+{
+    mat_t* matfp = Mat_Open(file, MAT_ACC_RDONLY);
+    if (!matfp) {
+        fprintf(stderr, "Error opening MAT file %s\n", file);
+        return EXIT_FAILURE;
     }
-    pa = matGetVariable(pmat, varname);
-    if (pa == NULL) {
-        printf("Error reading variable %s from file %s\n", varname, file);
-        matClose(pmat);
-        return(EXIT_FAILURE);
+    matvar_t* matvar = Mat_VarRead(matfp, varname);
+    if (!matvar) {
+        fprintf(stderr, "Variable %s not found in %s\n", varname, file);
+        Mat_Close(matfp);
+        return EXIT_FAILURE;
     }
-    *m = mxGetM(pa);
-    *n = mxGetN(pa);
-    if (!mxIsComplex(pa)) {
-        printf("Variable %s is not a complex array.\n", varname);
-        mxDestroyArray(pa);
-        matClose(pmat);
-        return(EXIT_FAILURE);
+    *m = matvar->dims[0];
+    *n = matvar->dims[1];
+    if (!matvar->isComplex) {
+        fprintf(stderr, "%s is not complex\n", varname);
+        Mat_VarFree(matvar);
+        Mat_Close(matfp);
+        return EXIT_FAILURE;
     }
-    data = (ComplexDouble*)mxGetData(pa);
-    *complex_array = (ComplexDouble**)malloc((*m) * sizeof(ComplexDouble*));
-    for (i = 0; i < *m; i++) {
-        (*complex_array)[i] = (ComplexDouble*)malloc((*n) * sizeof(ComplexDouble));
-    }
-    for (i = 0; i < *m; i++) {
-        for (j = 0; j < *n; j++) {
-            (*complex_array)[i][j].real = data[i + j * (*m)].real;
-            (*complex_array)[i][j].imag = data[i + j * (*m)].imag;
+    double* data = static_cast<double*>(matvar->data);
+    double* real_data = data;
+    double* imag_data = data + (*m * *n);
+
+    *complex_array = (ComplexDouble**)std::malloc((*m)*sizeof(ComplexDouble*));
+    for (size_t i = 0; i < *m; i++) {
+        (*complex_array)[i] = (ComplexDouble*)std::malloc((*n)*sizeof(ComplexDouble));
+        for (size_t j = 0; j < *n; j++) {
+            (*complex_array)[i][j].real = real_data[i + j*(*m)];
+            (*complex_array)[i][j].imag = imag_data[i + j*(*m)];
         }
     }
-    mxDestroyArray(pa);
-    matClose(pmat);
-    return(EXIT_SUCCESS);
+
+    Mat_VarFree(matvar);
+    Mat_Close(matfp);
+    return EXIT_SUCCESS;
 }
 
 
@@ -2024,8 +2026,6 @@ int invert_2x2(fftwf_complex m[2][2], fftwf_complex inv[2][2]) {
 
     neg[0] = -m[1][0][0]; neg[1] = -m[1][0][1];
     complex_div(inv[1][0], neg, det);
-
-
 
     complex_div(inv[1][1], m[0][0], det);
 
