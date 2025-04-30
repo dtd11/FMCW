@@ -5,10 +5,12 @@
 
 ## 📌 설치 방법  
 
-### 1️⃣ FFTW 라이브러리 설치  
+### 1️⃣ FFTW & matio 라이브러리 설치  
 ```bash
 sudo apt-get update
 sudo apt-get install libfftw3-dev gnuplot
+sudo apt-get install libfftw3f-dev gnuplot
+sudo apt-get install libmatio-dev
 ```
 
 ### 2️⃣ Boost 라이브러리 설치  
