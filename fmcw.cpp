@@ -1241,7 +1241,8 @@ int main()
 
         }
         auto end = std::chrono::high_resolution_clock::now();
-        std::cout << "transpose 실행 시간: "<< std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() << " ms" << std::endl;
+        std::cout << "Total 실행 시간: "<< std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() << " ms" << std::endl;
+        
         //Azi-Ele 플롯 코드
         /////////
 
