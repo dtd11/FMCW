@@ -25,6 +25,7 @@
 #include <string>
 #include <stdexcept>
 #include <cstdint>
+#include <chrono>
 
 #define _CRT_SECURE_NO_WARNINGS
 #define BLOCK_SIZE 16
@@ -117,7 +118,7 @@ int main()
     // CSV 파일 저장 경로 filepath는 저장되는 파일 / nodata_filepath는 nodata파일
     const char* filepath = "/home/dtd11/FMCW/3m_rignt_20_1.csv";
     const char* nodata_filepath = "/home/dtd11/FMCW/3m_rignt_20_1.csv";
-
+    auto start = std::chrono::high_resolution_clock::now();
 
     // variable 정의
     // chirp setting 포인트 수(chirp이 바뀔 때마다 세팅)
@@ -1239,6 +1240,8 @@ int main()
             free(A_steeringmatrix);
 
         }
+        auto end = std::chrono::high_resolution_clock::now();
+        std::cout << "transpose 실행 시간: "<< std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() << " ms" << std::endl;
         //Azi-Ele 플롯 코드
         /////////
 
