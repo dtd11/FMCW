@@ -21,6 +21,10 @@
 #include <chrono>
 #include <cstdlib>
 #include <cstdio>
+#include <fstream>
+#include <string>
+#include <stdexcept>
+#include <cstdint>
 
 #define _CRT_SECURE_NO_WARNINGS
 #define BLOCK_SIZE 16
@@ -102,32 +106,32 @@ void complex_sub(fftwf_complex res, fftwf_complex a, fftwf_complex b);
 
 void compute_residual(fftwf_complex** residual, fftwf_complex** x_data, fftwf_complex** A_steeringmatrix, fftwf_complex* s_value, int m);
 
+inline void get_csv_shape(const char* path, size_t& rows, size_t& cols);
+
+void apply_cfar(const double* data, int len, int* detections, int training_cell, int guard_cell, float cfar_scale);
+
 int main()
 {
-    // Linux에선 gnuplot 실행 파일이 시스템 PATH에 등록되어 있음, 컴퓨터에서 gnuplot.exe이 있는 경로로 저장(설치 방법 따르면 거의 비슷함)
-    // Gnuplot gp("\"C:\\Program Files\\gnuplot\\bin\\gnuplot.exe\"");
+    // 컴퓨터에서 gnuplot.exe이 있는 경로로 저장(설치 방법 따르면 거의 비슷함)
     Gnuplot gp;
     // CSV 파일 저장 경로 filepath는 저장되는 파일 / nodata_filepath는 nodata파일
     const char* filepath = "/home/dtd11/FMCW/3m_rignt_20_1.csv";
     const char* nodata_filepath = "/home/dtd11/FMCW/3m_rignt_20_1.csv";
 
+
     // variable 정의
     // chirp setting 포인트 수(chirp이 바뀔 때마다 세팅)
-    uint16_t pt = 2000;
-    uint16_t chirpperframe = (40 + 1);
+    size_t row, col;
+    get_csv_shape(filepath, row, col);
+    uint16_t pt = col;
+    uint16_t chirpperframe = static_cast<uint16_t>(row / 8);
     float cpt = (400e-6 - (1e-6));
 
     // CFAR 알고리즘 관련 변수
 
-    int cfar_start = 0;
-    int cfar_end = 100;
-    int new_num_cols = cfar_end - cfar_start + 1;
-    int num_train_range = 4;
-    int num_guard_range = 0;
-    int num_train_doppler = 4;
-    int num_guard_doppler = 2;
-    float threshold_scale = 15;
-
+    int training_cell = 4;
+    int guard_cell = 2;
+    float cfar_scale = 5;
     // variable (수정 거의 안하는 부분)
     uint8_t idle_pt = 0;
     uint8_t end_idle_pt = 0;
@@ -153,12 +157,7 @@ int main()
     double max_doppler = doppler_resolution * Nd / 2;
     double max_velocity = (lambda * max_doppler) / 2;
 
-    // notarget data 관련 변수(건드리지 말기)
-    //int16_t* nodata = (int16_t*)malloc(chirpperframe * pt * ch * sizeof(int16_t));
-    //nodata = read_csv_to_array(nodata_filepath, chirpperframe, pt, ch);
-
-    // angle fft 관련 변수
-    //calibration 데이터 (target_fft_save)의 경로를 적기 (중요!)
+    // angle fft 관련 변수(건드리지 말기)
     const char* cali_file = "/home/dtd11/FMCW/target_fft_save.mat";
     const char* varname = "target_fft_save";
     ComplexDouble** calibration_array;
@@ -182,7 +181,7 @@ int main()
     subtract_one_from_array(Tx_x_position, size_tx);
     subtract_one_from_array(Tx_y_position, size_ty);
     int max_targetnumber = 2;
-    float epsilon_value = 0.7;
+    float epsilon_value = 0.8;
     float alpha1 = 0.593328f;
     float alpha2 = 1.8f;
     double** weight = allocate_ones_matrix(16, 8);
@@ -190,18 +189,18 @@ int main()
 
     //// Radar 의 시작 코드
 
-    // if (dev.OpenBySerial() != okCFrontPanel::NoError) {
-    //     std::cerr << "Failed to open device." << std::endl;
-    //     return -1;
-    // }
+    //if (dev.OpenBySerial() != okCFrontPanel::NoError) {
+    //    std::cerr << "Failed to open device." << std::endl;
+    //    return -1;
+    //}
 
     //bitstream 파일 넣기(프로젝트 폴더에 bitstream 파일이 있어야 함!)
 
-    // error = dev.ConfigureFPGA("250331_94G_matching_ver2.bit");
-    // if (error != okCFrontPanel::NoError) {
-    //     std::cerr << "Failed to configure FPGA. Error code: " << error << std::endl;
-    //     return -1;
-    // }
+    //error = dev.ConfigureFPGA("250331_94G_matching_ver2.bit");
+    //if (error != okCFrontPanel::NoError) {
+    //    std::cerr << "Failed to configure FPGA. Error code: " << error << std::endl;
+    //    return -1;
+    //}
 
     // Chirp setting
 
@@ -216,14 +215,14 @@ int main()
     //spi_write(4, 0xF8136000);
 
     //(93~95G,2GHz, 41.675MHz) 400us_200us
-    // spi_write(4, 0x00034E27);
-    // spi_write(4, 0x00001F46);
-    // spi_write(4, 0x00281B55);
-    // spi_write(4, 0x00780284);
-    // spi_write(4, 0x014300C3);
-    // spi_write(4, 0x07208022);
-    // spi_write(4, 0x00000001);
-    // spi_write(4, 0xF8136000);
+    //spi_write(4, 0x00034E27);
+    //spi_write(4, 0x00001F46);
+    //spi_write(4, 0x00281B55);
+    //spi_write(4, 0x00780284);
+    //spi_write(4, 0x014300C3);
+    //spi_write(4, 0x07208022);
+    //spi_write(4, 0x00000001);
+    //spi_write(4, 0xF8136000);
 
     //(93~95G,2GHz, 41.675MHz) 800us_400us
     //spi_write(4, 0x00034E27); 
@@ -236,38 +235,59 @@ int main()
     //spi_write(4, 0xF8136000);
 
     // 반복 코드 시작
+
+    //dev.SetWireInValue(0x00, 0x00000001);  // FIFO reset 1
+    //dev.UpdateWireIns();
+    //Sleep(0.001); // delay
+    //dev.SetWireInValue(0x06, 0x00000000);  // io_trigger 0
+    //dev.UpdateWireIns();
+    //Sleep(0.001); // delay
+    //dev.SetWireInValue(0x00, 0x00000002 + 0x00000008 * idle_chirp + 0x400000 * (chirpperframe));  // # FIFO reset 0
+    ////#                        pa on        idle chirp(2)   chirp per frame
+    //dev.UpdateWireIns();
+    //dev.SetWireInValue(0x01, 0x00000001 * idle_pt + 0x00010000 * pt);
+    ////#                         idle  pt           pt per chirp
+    //dev.UpdateWireIns();
+    ////ADC GAIN
+    //spi_write(0, 0x000004);
+    //spi_write(0, 0x99000F);
+    //spi_write(0, 0x9A0019);
+    //// io_trigger 1
+    //dev.SetWireInValue(0x06, 0x00000001); // io_trigger 1
+    //dev.UpdateWireIns();
+
     while (1)
     {
-        // dev.SetWireInValue(0x00, 0x00000001);  // FIFO reset 1
-        // dev.UpdateWireIns();
-        // sleep(0.001); // delay
-        // dev.SetWireInValue(0x06, 0x00000000);  // io_trigger 0
-        // dev.UpdateWireIns();
-        // sleep(0.001); // delay
-        // dev.SetWireInValue(0x00, 0x00000002 + 0x00000008 * idle_chirp + 0x400000 * (chirpperframe));  // # FIFO reset 0
-        // //#                        pa on        idle chirp(2)   chirp per frame
-        // dev.UpdateWireIns();
-        // dev.SetWireInValue(0x01, 0x00000001 * idle_pt + 0x00010000 * pt);
-        // //#                         idle  pt           pt per chirp
-        // dev.UpdateWireIns();
-        // //ADC GAIN
-        // spi_write(0, 0x000004);
-        // spi_write(0, 0x99000F);
-        // spi_write(0, 0x9A0019);
-        // // io_trigger 1
-        // dev.SetWireInValue(0x06, 0x00000001); // io_trigger 1
-        // dev.UpdateWireIns();
-        // unsigned char* buffer = (unsigned char*)malloc(array_size * sizeof(unsigned char));
-        // dev.ReadFromBlockPipeOut(0xA3, BLOCK_SIZE, array_size, buffer);  // # pipeout(fpga > PC)
-        // int16_t* int16_buffer = (int16_t*)buffer; //int 16 자료형으로 변환
-        // int16_t* output = (int16_t*)malloc(total_pt * sizeof(int16_t)); //공간 할당
-        // transpose(int16_buffer, output, chirpperframe, pt, ch); //output으로 transpose(배열 순서 변경)
+        //unsigned char* buffer = (unsigned char*)malloc(array_size * sizeof(unsigned char));
+        //dev.ReadFromBlockPipeOut(0xA3, BLOCK_SIZE, array_size, buffer);  // # pipeout(fpga > PC)
+        //dev.SetWireInValue(0x00, 0x00000001);  // FIFO reset 1
+        //dev.UpdateWireIns();
+        //Sleep(0.001); // delay
+        //dev.SetWireInValue(0x06, 0x00000000);  // io_trigger 0
+        //dev.UpdateWireIns();
+        //Sleep(0.001); // delay
+        //dev.SetWireInValue(0x00, 0x00000002 + 0x00000008 * idle_chirp + 0x400000 * (chirpperframe));  // # FIFO reset 0
+        ////#                        pa on        idle chirp(2)   chirp per frame
+        //dev.UpdateWireIns();
+        //dev.SetWireInValue(0x01, 0x00000001 * idle_pt + 0x00010000 * pt);
+        ////#                         idle  pt           pt per chirp
+        //dev.UpdateWireIns();
+        ////ADC GAIN
+        //spi_write(0, 0x000004);
+        //spi_write(0, 0x99000F);
+        //spi_write(0, 0x9A0019);
+        //// io_trigger 1
+        //dev.SetWireInValue(0x06, 0x00000001); // io_trigger 1
+        //dev.UpdateWireIns();
+        //int16_t* int16_buffer = (int16_t*)buffer; //int 16 자료형으로 변환
+        //int16_t* output = (int16_t*)malloc(total_pt * sizeof(int16_t)); //공간 할당
+        //transpose(int16_buffer, output, chirpperframe, pt, ch); //output으로 transpose(배열 순서 변경)
 
         // CSV 파일 저장 코드
         //save_output_to_csv(filepath, output, chirpperframe, pt, ch);
         //free(buffer);
-
         //nodata 빼는 코드
+
         //int16_t* result = (int16_t*)malloc(chirpperframe * pt * ch * sizeof(int16_t));
         //subtract_arrays(output, nodata, result, total_size);
 
@@ -292,8 +312,8 @@ int main()
         }
 
         //// NODATA 안 빼는 상황
-        // split_output_into_2d_arrays(output, chirpperframe, pt, RXDATA7, RXDATA8, RXDATA5, RXDATA6, RXDATA3, RXDATA4, RXDATA1, RXDATA2);
-        // free(output);
+        //split_output_into_2d_arrays(output, chirpperframe, pt, RXDATA7, RXDATA8, RXDATA5, RXDATA6, RXDATA3, RXDATA4, RXDATA1, RXDATA2);
+        //free(output);
 
         //// NODATA 빼는 상황
         //free(output);
@@ -302,7 +322,7 @@ int main()
 
         //nodata만 쓰기(디버깅용)
 
-        //  notarget data 관련 변수(건드리지 말기)
+         //notarget data 관련 변수(건드리지 말기)
         int16_t* nodata = (int16_t*)malloc(chirpperframe * pt * ch * sizeof(int16_t));
         nodata = read_csv_to_array(nodata_filepath, chirpperframe, pt, ch);
         split_output_into_2d_arrays(nodata, chirpperframe, pt, RXDATA7, RXDATA8, RXDATA5, RXDATA4, RXDATA3, RXDATA6, RXDATA1, RXDATA2);
@@ -419,6 +439,7 @@ int main()
             free(RXDATA7[i]);
             free(RXDATA8[i]);
         }
+
         free(RXDATA1);
         free(RXDATA2);
         free(RXDATA3);
@@ -428,354 +449,96 @@ int main()
         free(RXDATA7);
         free(RXDATA8);
 
-        ///////// 2D-Range FFT code /////////
+        ///////// 1D - range plot code ////////
 
-        double** range_rx1_same = (double**)malloc(Nd * sizeof(double*));
-        for (int i = 0; i < Nd; i++) {
-            range_rx1_same[i] = (double*)malloc(data_pt * sizeof(double));
+        fftwf_complex* fft_input_1d = (fftwf_complex*)fftwf_malloc(sizeof(fftwf_complex) * data_pt);
+        fftwf_complex* fft_output_1d = (fftwf_complex*)fftwf_malloc(sizeof(fftwf_complex) * data_pt);
+        for (int i = 0; i < data_pt; ++i) {
+            fft_input_1d[i][0] = RAW_Rx[0][0][i];
+            fft_input_1d[i][1] = 0.0;
         }
-
-        for (int i = 24; i < (chirpperframe - 1); i++) {
-            for (int j = 0; j < data_pt; j++) {
-                range_rx1_same[i - 24][j] = RAW_Rx[0][i][j];
+        fftwf_plan p_1d = fftwf_plan_dft_1d(data_pt, fft_input_1d, fft_output_1d, FFTW_FORWARD, FFTW_ESTIMATE);
+        fftwf_execute(p_1d);
+        fftwf_free(fft_input_1d);
+        fftwf_complex* fftd_1d = (fftwf_complex*)fftwf_malloc(sizeof(fftwf_complex) * data_pt);
+        for (int i = 0; i < data_pt; ++i) {
+            fftd_1d[i][0] = 2 * fft_output_1d[i][0];  // Real part
+            fftd_1d[i][1] = 2 * fft_output_1d[i][1];  // Imaginary part
+        }
+        fftwf_destroy_plan(p_1d);
+        fftwf_free(fft_output_1d);
+        double* range_1d_abs = (double*)malloc(sizeof(double) * data_pt);
+        for (int i = 0; i < data_pt; i++)
+        {
+            range_1d_abs[i] = sqrt(fftd_1d[i][0] * fftd_1d[i][0] + fftd_1d[i][1] * fftd_1d[i][1]);
+        }
+        fftwf_free(fftd_1d);
+        double* range_1d_plot = (double*)malloc((data_pt / 2) * sizeof(double));
+        for (int i = 0; i < data_pt / 2; ++i) {
+            range_1d_plot[i] = range_1d_abs[i];
+        }
+        free(range_1d_abs);
+        int* detections = (int*)malloc((data_pt / 2) * sizeof(int));
+        apply_cfar(range_1d_plot, (data_pt / 2), detections, training_cell, guard_cell, cfar_scale);
+        int* col_indices_fin = (int*)malloc((data_pt / 2) * sizeof(int));
+        int unique_count = 0;
+        for (int i = 0; i < (data_pt / 2); i++) {
+            if (detections[i] == 1) {
+                col_indices_fin[unique_count] = i;
+                unique_count++;
             }
         }
+        free(detections);
 
-        fftwf_complex* input_2d = (fftwf_complex*)fftwf_malloc(sizeof(fftwf_complex) * Nd * data_pt);
-        fftwf_complex* output_2d = (fftwf_complex*)fftwf_malloc(sizeof(fftwf_complex) * Nd * data_pt);
-
-        for (int i = 0; i < Nd; i++) {
-            for (int j = 0; j < data_pt; j++) {
-                input_2d[i * data_pt + j][0] = (float)range_rx1_same[i][j];
-                input_2d[i * data_pt + j][1] = 0.0f;
+        if (unique_count == 0) {
+            for (int ch = 0; ch < 8; ch++) {
+                for (int i = 0; i < (chirpperframe - 1); i++) {
+                    free(RAW_Rx[ch][i]);
+                }
+                free(RAW_Rx[ch]);
             }
-        }
-
-        for (int i = 0; i < Nd; i++) {
-            free(range_rx1_same[i]);
-        }
-        free(range_rx1_same);
-
-        fftwf_plan plan = fftwf_plan_dft_2d(Nd, data_pt, input_2d, output_2d, FFTW_FORWARD, FFTW_ESTIMATE);
-
-        fftwf_execute(plan);
-
-        fftwf_free(input_2d);
-        fftwf_destroy_plan(plan);
-
-        // absolute
-        float* magnitude_2d = (float*)malloc((Nd * data_pt) * sizeof(float));
-
-        for (int i = 0; i < (Nd * data_pt); ++i) {
-            float real_2d = output_2d[i][0];
-            float imag_2d = output_2d[i][1];
-            magnitude_2d[i] = sqrt(real_2d * real_2d + imag_2d * imag_2d);
-        }
-        fftwf_free(output_2d);
-
-        float** db_2d = (float**)malloc(Nd * sizeof(float*));
-        for (int i = 0; i < Nd; ++i) {
-            db_2d[i] = (float*)malloc(data_pt * sizeof(float));
-        }
-
-        for (int i = 0; i < Nd; ++i) {
-            for (int j = 0; j < data_pt; ++j) {
-                db_2d[i][j] = magnitude_2d[i * data_pt + j];
-            }
-        }
-
-        free(magnitude_2d);
-
-        fftshift_rows(db_2d, Nd, data_pt);
-
-        ///// 2D-CFAR 알고리즘
-
-        float** range_doppler_cfar = (float**)malloc(Nd * sizeof(float*));
-        for (int i = 0; i < Nd; ++i) {
-            range_doppler_cfar[i] = (float*)malloc(new_num_cols * sizeof(float));
-        }
-
-        for (int i = 0; i < Nd; ++i) {
-            for (int j = cfar_start; j <= cfar_end; ++j) {
-                range_doppler_cfar[i][j - cfar_start] = db_2d[i][j];
-            }
-        }
-
-        int** cfar_result = (int**)malloc(Nd * sizeof(int*));
-        for (int i = 0; i < Nd; ++i) {
-            cfar_result[i] = (int*)malloc(new_num_cols * sizeof(int));
-        }
-
-        cfar_2d_prefixsum(range_doppler_cfar, Nd, new_num_cols, num_train_range,
-            num_guard_range, num_train_doppler, num_guard_doppler,
-            threshold_scale, cfar_result);
-
-        int max_detections = Nd * new_num_cols;
-        int* row_indices = (int*)malloc(max_detections * sizeof(int));
-        int* col_indices = (int*)malloc(max_detections * sizeof(int));
-
-        int num_detections = find_peaks(cfar_result, Nd, new_num_cols, row_indices, col_indices);
-
-        if (num_detections == 0) {
-            for (int i = 0; i < Nd; ++i) {
-                free(cfar_result[i]);
-            }
-            free(cfar_result);
-            free(row_indices);
-            free(col_indices);
-            for (int i = 0; i < Nd; ++i) {
-                free(db_2d[i]);
-            }
-            free(db_2d);
-            for (int i = 0; i < Nd; ++i) {
-                free(range_doppler_cfar[i]);
-            }
-            free(range_doppler_cfar);
-
+            free(RAW_Rx);
+            free(range_1d_plot);
+            free(col_indices_fin);
             continue;
         }
-
-        int* row_indices_fin = (int*)malloc(max_detections * sizeof(int));
-        int* col_indices_fin = (int*)malloc(max_detections * sizeof(int));
-        int num_detections_fin = 0;
-
-        // 인접한 포인트를 삭제하지 않는 코드
-
-        num_detections_fin = num_detections;
-        for (int i = 0; i < num_detections_fin; i++) {
-            row_indices_fin[i] = row_indices[i];
-            col_indices_fin[i] = col_indices[i];
-        }
-
-        //cfar_start의 인덱스를 맞추는 코드
-        for (int i = 0; i < num_detections_fin; i++) {
-            col_indices_fin[i] += cfar_start;
-        }
-
-        // 2D CFAR 끝
-
-        // range-doppler map 에서 반으로 자르기
-
-        float** plot_2d = (float**)malloc(Nd * sizeof(float*));
-        for (int i = 0; i < Nd; ++i) {
-            plot_2d[i] = (float*)malloc((data_pt / 2) * sizeof(float));
-        }
-        for (int i = 0; i < Nd; ++i) {
-            for (int j = 0; j < data_pt / 2; ++j) {
-                plot_2d[i][j] = db_2d[i][j];
-            }
-        }
-
-        ///////// 1D - range plot code ///////// 1d 거리 플롯 코드(DEBUG)
-
-        //double* range_average = (double*)malloc(data_pt * sizeof(double));
-        // //평균내기
-        //for (int j = 0; j < data_pt; ++j) {
-        //    double sum1 = 0.0;
-        //    for (int i = 0; i < ((chirpperframe - 1)); ++i) {
-        //        sum1 += RAW_Rx1_data[i][j];
-        //    }
-        //    range_average[j] = sum1 / ((chirpperframe - 1));
-        //}
-        //for (int i = 0; i < data_pt; ++i) {
-        //    range_average[i] = RAW_Rx7_data[0][i];
-        //}
-        //for (int i = 0; i < (chirpperframe - 1); ++i) {
-        //    free(RAW_Rx7_data[i]);
-        //}
-        //free(RAW_Rx7_data);
-        //fftwf_complex* fft_input_1d = (fftwf_complex*)fftwf_malloc(sizeof(fftwf_complex) * data_pt);
-        //fftwf_complex* fft_output_1d = (fftwf_complex*)fftwf_malloc(sizeof(fftwf_complex) * data_pt);
-        //for (int i = 0; i < data_pt; ++i) {
-        //    fft_input_1d[i][0] = range_average[i];
-        //    fft_input_1d[i][1] = 0.0;
-        //}
-        //    free(range_average);
-        //    fftwf_plan p_1d = fftwf_plan_dft_1d(data_pt, fft_input_1d, fft_output_1d, FFTW_FORWARD, FFTW_ESTIMATE);
-        //    fftwf_execute(p_1d);
-        //    fftwf_free(fft_input_1d);
-        //    fftwf_complex* fftd_1d = (fftwf_complex*)fftwf_malloc(sizeof(fftwf_complex) * data_pt);
-        //    for (int i = 0; i < data_pt; ++i) {
-        //        fftd_1d[i][0] = 2 * fft_output_1d[i][0] / (double)data_pt;  // Real part
-        //        fftd_1d[i][1] = 2 * fft_output_1d[i][1] / (double)data_pt;  // Imaginary part
-        //    }
-        //    fftwf_destroy_plan(p_1d);
-        //    fftwf_free(fft_output_1d);
-        //    double* range_1d_abs = (double*)malloc(sizeof(double) * data_pt);
-        //    for (int i = 0; i < data_pt; i++)
-        //    {
-        //        range_1d_abs[i] = sqrt(fftd_1d[i][0] * fftd_1d[i][0] + fftd_1d[i][1] * fftd_1d[i][1]);
-        //    }
-        //    fftwf_free(fftd_1d);
-        //    double* range_1d_log = (double*)malloc(data_pt * sizeof(double));
-        //    for (int i = 0; i < data_pt; ++i) {
-        //        range_1d_log[i] = 20 * log10(range_1d_abs[i]);
-        //    }
-        //    free(range_1d_abs);
-        //    double* range_1d_plot = (double*)malloc((data_pt / 2) * sizeof(double));
-        //    for (int i = 0; i < data_pt / 2; ++i) {
-        //        range_1d_plot[i] = range_1d_log[i];
-        //    }
-        //    free(range_1d_log);
-        //    float max_value = -FLT_MAX;  // Initialize to the lowest possible float value
-        //    int max_index = -1;          // To store the index with the max value
-        //    for (int i = 0; i < num_detections_fin; ++i) {
-        //        int index = col_indices_fin[i];  // Get the column index from col_indices_fin
-        //        float value = range_1d_plot[index];  // Access the value at the specific index in range_1d_plot[990]
-        //        // Check if the current value is the maximum
-        //        if (value > max_value) {
-        //            max_value = value;
-        //            max_index = index;
-        //        }
-        //    }
-// (1) Gnuplot 전처리
-        //gp << "set title 'CFAR 2D Heatmap'\n";
-        //gp << "set xlabel 'Range (cm)'\n";
-        //gp << "set ylabel 'Velocity (m/s)'\n";
-        //gp << "unset key\n";
+        //Range-plot(debug)
+        //gp << "set terminal wxt persist\n";
+        //gp << "unset key\n";  // 범례 제거
         //gp << "set view map\n";
-        //gp << "set size ratio -1\n";  // 1:1 비율
         //gp << "set palette rgbformulae 33,13,10\n";
-        //거리 플롯
-            //double scaling_factor = max_range / (data_pt/2);
-            //주파수 플롯
-            //double scaling_factor = fs / data_pt;
-            //adc 플롯
-            //double scaling_factor = 1;
-            //std::vector<std::pair<int, double>> plot_data;
-            //for (int i = 0; i < data_pt/2; ++i) {
-            //    double x_scaled = i * scaling_factor;
-            //    plot_data.push_back(std::make_pair(x_scaled, range_1d_plot[i]));
-            //}
-            //gp << "set title 'Range Log Plot'\n";
-            //gp << "set xlabel 'Range (cm)'\n";
-            //gp << "set ylabel 'Amplitude (dBm)'\n";
-            //if (num_detections_fin > 0) {
-            //    std::vector<std::pair<int, double>> detected_points;
-            //    for (int i = 0; i < num_detections_fin; ++i) {
-            //        int index = col_indices_fin[i];
-            //        //double x_scaled = (index - 1) * scaling_factor;
-            //        double x_scaled = (index) * scaling_factor;
-            //        //detected_points.push_back(std::make_pair(x_scaled, range_1d_plot[(index - 1)]));
-            //        detected_points.push_back(std::make_pair(x_scaled, range_1d_plot[(index)]));
-            //    }
-            //    //int max_index = max_col_index;
-            //    double max_x_scaled = (max_index * scaling_factor)/100;
-            //    //double max_value = range_1d_plot[max_index];
-            //    double x_offset = 2000;  // Move the label 0.5 units to the right
-            //    double y_offset = -24;  // Move the label 1.0 units above the point
-            //    // 최대 값 텍스트 레이블 추가 (텍스트만 표시)
-            //    gp << "set xrange [0:15000]\n";
-            //    gp << "set yrange [-110:-30]\n";
-            //    gp << "set label' Range: " << std::fixed << std::setprecision(2) << max_x_scaled << " (m) "
-            //        << "Max Value: " << std::fixed << std::setprecision(2) << max_value<< " (dBm)"
-            //        << "' at " << (x_offset) << "," << (y_offset)
-            //        << " font ',30' tc rgb 'black'\n";
-            //    gp << "plot '-' with lines title 'Range_Plot', "
-            //        << "'-' with points pointtype 7 pointsize 1.5 linecolor rgb 'red' title 'Detected Peaks'\n";
-            //    gp.send1d(plot_data);
-            //    gp.send1d(detected_points);
-            //    gp << "unset label\n";
-            //}
-            //else {
-            //    double x_offset = 2000;  // Move the label 0.5 units to the right
-            //    double y_offset = -24;  // Move the label 1.0 units above the point
-            //    gp << "set xrange [0:15000]\n";
-            //    gp << "set yrange [-110:-30]\n";
-            //    gp << "set label' Range: " << std::fixed << std::setprecision(2) << 00 << " (m) "
-            //        << "Max Value: " << std::fixed << std::setprecision(2) << 00 << " (dBm)"
-            //        << "' at " << (x_offset) << "," << (y_offset)
-            //        << " font ',30' tc rgb 'black'\n";
-            //    gp << "plot '-' with lines title 'Range_Plot'\n";
-            //    gp.send1d(plot_data);
-            //    gp << "unset label\n";
-            //}
-            //free(range_1d_plot);
-
-        ///////// 2D - range-doppler map 코드(DEBUG)
-
-        //gp << "set xrange [0:" << (data_pt / 2.0 - 1.0) << "]\n";
-        //gp << "set yrange [0:" << (Nd - 1.0) << "]\n";
-        //{
-        //    double step_cm = 5.0;
-        //    std::ostringstream xtics;
-        //    xtics << "set xtics(";
-        //    bool first = true;
-        //    for (double dist = 0.0; dist <= max_range + 1e-9; dist += step_cm) {
-        //        double colIndex = (dist / max_range) * ((data_pt / 2.0) - 1.0);
-        //        if (!first) xtics << ", ";
-        //        xtics << "\"" << dist << "\" " << colIndex;
-        //        first = false;
-        //    }
-        //    xtics << ")\n";
-        //    gp << xtics.str();
+        //gp << "set xlabel 'Range (cm)'\n";
+        //gp << "set ylabel 'Amplitude'\n";
+        ////주파수 플롯
+        ////double scaling_factor = fs / data_pt;
+        ////adc 플롯
+        ////double scaling_factor = 1;
+        //std::vector<std::pair<int, double>> plot_data;
+        //for (int i = 0; i < (data_pt / 2); ++i) {
+        //    double x_scaled = i * scaling_factor;
+        //    plot_data.push_back(std::make_pair(x_scaled, range_1d_plot[i]));
         //}
-        //{
-        //    double step_vel = 1.0;
-        //    std::ostringstream ytics;
-        //    ytics << "set ytics(";
-        //    bool first = true;
-        //    for (double v = -max_velocity; v <= max_velocity + 1e-9; v += step_vel) {
-        //        double rowIndex =
-        //            ((v + max_velocity) / (2.0 * max_velocity)) * (Nd - 1.0);
-        //        if (!first) ytics << ", ";
-        //        ytics << "\"" << v << "\" " << rowIndex;
-        //        first = false;
-        //    }
-        //    ytics << ")\n";
-        //    gp << ytics.str();
+        //gp << "set title 'Range Log Plot'\n";
+        //gp << "set xlabel 'Range (cm)'\n";
+        //gp << "set ylabel 'Amplitude'\n";
+        //std::vector<std::pair<int, double>> detected_points;
+        //for (int i = 0; i < unique_count; ++i) {
+        //    int index = col_indices_fin[i];
+        //    double x_scaled = (index)*scaling_factor;
+        //    detected_points.push_back(std::make_pair(x_scaled, range_1d_plot[(index)]));
         //}
-        //gp << "set grid xtics ytics\n";
-        //gp << "plot '-' matrix with image, '-' with points pt 3 lc rgb 'red' notitle\n";
-        //for (int r = 0; r < Nd; r++) {
-        //    for (int c = 0; c < (data_pt / 2); c++) {
-        //        gp << plot_2d[r][c] << " ";
-        //    }
-        //    gp << "\n";
-        //}
-        //gp << "\n";
-        //gp << "e\n";
-        //for (int i = 0; i < num_detections_fin; i++) {
-        //    gp << col_indices_fin[i] << " " << row_indices_fin[i] << "\n";
-        //}
-        //gp << "e\n";
-        //gp.flush();
+        //gp << "plot '-' with lines title 'Range_Plot', "
+        //    << "'-' with points pointtype 7 pointsize 1.5 linecolor rgb 'red' title 'Detected Peaks'\n";
+        //gp.send1d(plot_data);
+        //gp.send1d(detected_points);
+        //gp << "unset label\n";
 
-        //2D - PLOT 끝
 
-        for (int i = 0; i < Nd; ++i) {
-            free(cfar_result[i]);
-        }
-        free(cfar_result);
-        free(row_indices);
-        free(col_indices);
-        for (int i = 0; i < Nd; ++i) {
-            free(db_2d[i]);
-        }
-        free(db_2d);
-        for (int i = 0; i < Nd; ++i) {
-            free(range_doppler_cfar[i]);
-        }
-        free(range_doppler_cfar);
-        for (int i = 0; i < Nd; ++i) {
-            free(plot_2d[i]);
-        }
-        free(plot_2d);
-        free(row_indices_fin);
+        free(range_1d_plot);
 
         ////////  ANGLE FFT  ////////
 
-        // TARGET 값 중에서 중복되는 거리의 데이터를 제거
-
-        int* unique_col_indices = (int*)malloc(max_detections * sizeof(int));
-        int unique_count = 0;
-
-        get_unique_col_indices_only_one(col_indices_fin, num_detections_fin, unique_col_indices, &unique_count);
-
-        free(col_indices_fin);
-
         // FFT
-
         fftwf_complex** fftd_data_RX1 = (fftwf_complex**)malloc(24 * sizeof(fftwf_complex*));
         for (int i = 0; i < 24; ++i) {
             fftd_data_RX1[i] = (fftwf_complex*)fftwf_malloc(sizeof(fftwf_complex) * data_pt);
@@ -843,28 +606,29 @@ int main()
 
         for (int i = 0; i < unique_count; i++) {
             for (int j = 0; j < 24; j++) {
-                target_fft_RAW[0][j][i][0] = fftd_data_RX1[j][unique_col_indices[i]][0];
-                target_fft_RAW[0][j][i][1] = fftd_data_RX1[j][unique_col_indices[i]][1];
-                target_fft_RAW[1][j][i][0] = fftd_data_RX2[j][unique_col_indices[i]][0];
-                target_fft_RAW[1][j][i][1] = fftd_data_RX2[j][unique_col_indices[i]][1];
-                target_fft_RAW[2][j][i][0] = fftd_data_RX3[j][unique_col_indices[i]][0];
-                target_fft_RAW[2][j][i][1] = fftd_data_RX3[j][unique_col_indices[i]][1];
-                target_fft_RAW[3][j][i][0] = fftd_data_RX4[j][unique_col_indices[i]][0];
-                target_fft_RAW[3][j][i][1] = fftd_data_RX4[j][unique_col_indices[i]][1];
-                target_fft_RAW[4][j][i][0] = fftd_data_RX5[j][unique_col_indices[i]][0];
-                target_fft_RAW[4][j][i][1] = fftd_data_RX5[j][unique_col_indices[i]][1];
-                target_fft_RAW[5][j][i][0] = fftd_data_RX6[j][unique_col_indices[i]][0];
-                target_fft_RAW[5][j][i][1] = fftd_data_RX6[j][unique_col_indices[i]][1];
-                target_fft_RAW[6][j][i][0] = fftd_data_RX7[j][unique_col_indices[i]][0];
-                target_fft_RAW[6][j][i][1] = fftd_data_RX7[j][unique_col_indices[i]][1];
-                target_fft_RAW[7][j][i][0] = fftd_data_RX8[j][unique_col_indices[i]][0];
-                target_fft_RAW[7][j][i][1] = fftd_data_RX8[j][unique_col_indices[i]][1];
+                target_fft_RAW[0][j][i][0] = fftd_data_RX1[j][col_indices_fin[i]][0];
+                target_fft_RAW[0][j][i][1] = fftd_data_RX1[j][col_indices_fin[i]][1];
+                target_fft_RAW[1][j][i][0] = fftd_data_RX2[j][col_indices_fin[i]][0];
+                target_fft_RAW[1][j][i][1] = fftd_data_RX2[j][col_indices_fin[i]][1];
+                target_fft_RAW[2][j][i][0] = fftd_data_RX3[j][col_indices_fin[i]][0];
+                target_fft_RAW[2][j][i][1] = fftd_data_RX3[j][col_indices_fin[i]][1];
+                target_fft_RAW[3][j][i][0] = fftd_data_RX4[j][col_indices_fin[i]][0];
+                target_fft_RAW[3][j][i][1] = fftd_data_RX4[j][col_indices_fin[i]][1];
+                target_fft_RAW[4][j][i][0] = fftd_data_RX5[j][col_indices_fin[i]][0];
+                target_fft_RAW[4][j][i][1] = fftd_data_RX5[j][col_indices_fin[i]][1];
+                target_fft_RAW[5][j][i][0] = fftd_data_RX6[j][col_indices_fin[i]][0];
+                target_fft_RAW[5][j][i][1] = fftd_data_RX6[j][col_indices_fin[i]][1];
+                target_fft_RAW[6][j][i][0] = fftd_data_RX7[j][col_indices_fin[i]][0];
+                target_fft_RAW[6][j][i][1] = fftd_data_RX7[j][col_indices_fin[i]][1];
+                target_fft_RAW[7][j][i][0] = fftd_data_RX8[j][col_indices_fin[i]][0];
+                target_fft_RAW[7][j][i][1] = fftd_data_RX8[j][col_indices_fin[i]][1];
             }
         }
-        float* detected_ranges = (float*)malloc(max_detections * sizeof(float));
+        float* detected_ranges = (float*)malloc(unique_count * sizeof(float));
         for (int i = 0; i < unique_count; i++) {
-            detected_ranges[i] = unique_col_indices[i] * scaling_factor;
+            detected_ranges[i] = col_indices_fin[i] * scaling_factor;
         }
+
         for (int i = 0; i < 24; ++i) {
             fftwf_free(fftd_data_RX1[i]);
             fftwf_free(fftd_data_RX2[i]);
@@ -883,7 +647,7 @@ int main()
         free(fftd_data_RX6);
         free(fftd_data_RX7);
         free(fftd_data_RX8);
-        free(unique_col_indices);
+        free(col_indices_fin);
 
         //calibration
         for (int i = 0; i < unique_count; i++) {
@@ -896,6 +660,7 @@ int main()
                 }
             }
         }
+
         for (int i = 0; i < ch; ++i) {
             for (int j = 0; j < 24; ++j) {
                 fftwf_free(target_fft_RAW[i][j]);
@@ -903,6 +668,8 @@ int main()
             fftwf_free(target_fft_RAW[i]);
         }
         free(target_fft_RAW);
+
+
 
         // Mapping
 
@@ -1447,6 +1214,7 @@ int main()
 
                 }
 
+
                 float residual_norm = 0.0f;
 
                 for (int i = 0; i < 128; ++i) {
@@ -1471,7 +1239,7 @@ int main()
             free(A_steeringmatrix);
 
         }
-        //전체 플롯 코드
+        //Azi-Ele 플롯 코드
         /////////
 
         std::vector<double> x0(unique_count), y0(unique_count), z0(unique_count);
@@ -1491,15 +1259,14 @@ int main()
         for (int i = 0; i < unique_count; ++i) {
             xz_series_0[i].push_back(std::make_pair(x0[i], z0[i]));
             xz_series_1[i].push_back(std::make_pair(x1[i], z1[i]));
-            yz_series_0[i].push_back(std::make_pair(y0[i], z0[i]));
-            yz_series_1[i].push_back(std::make_pair(y1[i], z1[i]));
+            yz_series_0[i].push_back(std::make_pair(z0[i], y0[i]));
+            yz_series_1[i].push_back(std::make_pair(z1[i], y1[i]));
         }
         std::vector<std::string> colors = { "red", "blue", "green", "magenta", "cyan", "orange", "brown", "violet" };
         gp << "clear\n";  // 이전 데이터를 지우고 같은 윈도우에서 새로 그림
         // multiplot 설정: 1행 2열의 레이아웃 (왼쪽: xz평면, 오른쪽: yz평면)
         gp << "set multiplot layout 1,2 title 'Target Positions on xz and yz planes (Centered at 0,0)'\n";
-
-        //// --- xz평면 플롯 ---
+        ////// --- xz평면 플롯 ---
         gp << "set title 'Azimuth'\n";
         gp << "set xlabel 'x (m)'\n";
         gp << "set ylabel 'z (m)'\n";
@@ -1558,9 +1325,10 @@ int main()
             gp.send1d(yz_series_1[i]);
         }
         gp << "unset multiplot\n";
+        sleep(100);
         gp.flush();
 
-        //2D-PLOT
+
         /////////
         for (int i = 0; i < 2; ++i) {
             free(x_hat[i]);
@@ -2128,5 +1896,61 @@ void compute_residual(fftwf_complex** residual, fftwf_complex** x_data, fftwf_co
 
         residual[i][m][0] = x_data[i][m][0] - Ax[0];
         residual[i][m][1] = x_data[i][m][1] - Ax[1];
+    }
+}
+
+// filepath 에 있는 CSV 파일의 행·열 개수를 rows, cols에 저장
+inline void get_csv_shape(const char* path, size_t& rows, size_t& cols) {
+    std::ifstream in(path);
+    if (!in) throw std::runtime_error(std::string("Cannot open CSV: ") + path);
+
+    rows = 0;
+    cols = 0;
+    std::string line;
+
+    // 첫 줄을 읽어 cols 계산
+    if (std::getline(in, line)) {
+        ++rows;
+        cols = 1;
+        for (char c : line)
+            if (c == ',') ++cols;
+    }
+
+    // 나머지 줄 개수 세기
+    while (std::getline(in, line))
+        ++rows;
+}
+
+void apply_cfar(const double* data, int len, int* detections, int training_cell, int guard_cell, float cfar_scale) {
+    // 검출 배열 초기화: 모든 값을 0으로 설정
+    for (int i = 0; i < len; i++) {
+        detections[i] = 0;
+    }
+
+    // 유효한 윈도우 범위 내에서 CFAR 검출 수행
+    for (int i = training_cell + guard_cell; i < len - (training_cell + guard_cell); i++) {
+        double noise_sum = 0.0;
+        int count = 0;
+
+        // 왼쪽 트레이닝 셀 (가드 셀 제외)
+        for (int j = i - (training_cell + guard_cell); j < i - guard_cell; j++) {
+            noise_sum += data[j];
+            count++;
+        }
+
+        // 오른쪽 트레이닝 셀 (가드 셀 제외)
+        for (int j = i + guard_cell + 1; j <= i + guard_cell + training_cell; j++) {
+            noise_sum += data[j];
+            count++;
+        }
+
+        // 노이즈 평균 계산 및 임계값 산출
+        double noise_average = noise_sum / count;
+        double threshold = noise_average * cfar_scale;
+
+        // 셀 under test의 값이 임계값보다 크면 검출한 것으로 표시
+        if (data[i] > threshold) {
+            detections[i] = 1;
+        }
     }
 }
