@@ -118,8 +118,6 @@ int main()
     // CSV 파일 저장 경로 filepath는 저장되는 파일 / nodata_filepath는 nodata파일
     const char* filepath = "/home/dtd11/FMCW/3m_rignt_20_1.csv";
     const char* nodata_filepath = "/home/dtd11/FMCW/3m_rignt_20_1.csv";
-    auto start = std::chrono::high_resolution_clock::now();
-
     // variable 정의
     // chirp setting 포인트 수(chirp이 바뀔 때마다 세팅)
     size_t row, col;
@@ -419,6 +417,7 @@ int main()
         //gp.flush(); // 명령어 강제 전송
 
         ////////// Raw Data
+        auto start = std::chrono::high_resolution_clock::now();
         int16_t** RXDATA[8] = { RXDATA1, RXDATA2, RXDATA3, RXDATA4, RXDATA5, RXDATA6, RXDATA7, RXDATA8 };
         double*** RAW_Rx = (double***)malloc(8 * sizeof(double**));
         for (int ch = 0; ch < 8; ch++) {
